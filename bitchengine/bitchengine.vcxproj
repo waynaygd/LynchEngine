@@ -179,6 +179,7 @@
     <ClInclude Include="src\camera.h" />
     <ClInclude Include="src\d3d_init.h" />
     <ClInclude Include="src\gpu_upload.h" />
+    <ClInclude Include="src\lights.h" />
     <ClInclude Include="src\mesh.h" />
     <ClInclude Include="src\obj_loader.h" />
     <ClInclude Include="src\sceneloadsave.h" />

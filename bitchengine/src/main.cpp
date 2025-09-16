@@ -139,26 +139,48 @@ void RenderFrame()
 	// Таблица SRV t0..t2: albedo/normal/position — подряд в g_srvHeap
 	g_cmdList->SetGraphicsRootDescriptorTable(0, SRV_GPU(g_gbufAlbedoSRV));
 
-	// CB b1 — свет/дебаг
-	CBLighting L{};
-	L.camPos = g_cam.pos;
-	L.lightDir = { -0.4f, -1.0f, -0.2f };
-	L.lightColor = { 0.7f, 0.2f, 0.1f };
+	if (g_lightsAuthor.empty()) { // стартовый directional
+		g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
+	}
+
+	CBLightingGPU L{};
 	L.debugMode = float(g_gbufDebugMode);
 
-	// world -> view для направления света
-	XMMATRIX V = g_cam.View();
-	XMVECTOR Lw = XMVector3Normalize(XMLoadFloat3(&L.lightDir));
-	XMVECTOR Lv = XMVector3TransformNormal(Lw, V);
-	Lv = XMVector3Normalize(Lv);
-	XMStoreFloat3(&L.lightDir, Lv);
-
-	// invP для реконструкции позиции
-	XMMATRIX  P = g_cam.Proj();
-	XMMATRIX  invP = XMMatrixInverse(nullptr, P);
+	// invP
+	DirectX::XMMATRIX P = g_cam.Proj();
+	DirectX::XMMATRIX invP = DirectX::XMMatrixInverse(nullptr, P);
 	XMStoreFloat4x4(&L.invP, XMMatrixTranspose(invP));
+	L.zRange = { g_cam.zn, g_cam.zf };
 
-	// ТЕПЕРЬ пишем в CB
+	// world->view
+	DirectX::XMMATRIX V = g_cam.View();
+	auto ToVSPoint = [&](const DirectX::XMFLOAT3& w)->DirectX::XMFLOAT3 {
+		DirectX::XMFLOAT3 o;
+		XMStoreFloat3(&o, XMVector3TransformCoord(XMLoadFloat3(&w), V));
+		return o;
+		};
+	auto ToVSDir = [&](const DirectX::XMFLOAT3& w)->DirectX::XMFLOAT3 {
+		DirectX::XMFLOAT3 o;
+		XMStoreFloat3(&o, XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V)));
+		return o;
+		};
+
+	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
+	for (uint32_t i = 0; i < n; ++i) {
+		const auto& A = g_lightsAuthor[i];
+		LightGPU G{};
+		G.type = (uint32_t)A.type;
+		G.color = A.color;
+		G.intensity = A.intensity;
+		G.posVS = ToVSPoint(A.posW);
+		G.dirVS = ToVSDir(A.dirW);
+		G.radius = A.radius;
+		G.cosInner = cosf(DirectX::XMConvertToRadians(A.innerDeg));
+		G.cosOuter = cosf(DirectX::XMConvertToRadians(A.outerDeg));
+		L.lights[i] = G;
+	}
+	L.lightCount = n;
+
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
 

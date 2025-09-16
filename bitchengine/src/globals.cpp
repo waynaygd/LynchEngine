@@ -109,6 +109,9 @@ UINT                   g_cbMaxPerFrame = 0;   // макс. объектов на кадр
 ComPtr<ID3D12Resource> g_cbLighting;
 uint8_t* g_cbLightingPtr = nullptr;
 
+std::vector<LightAuthor> g_lightsAuthor;
+int g_selectedLight = -1;
+
 int g_gbufDebugMode = 0; // 0=Lighting, 1=Albedo, 2=Normal, 3=Depth
 
 ComPtr<ID3D12Resource> g_gbuf[GBUF_COUNT];

@@ -119,6 +119,9 @@
     <ClInclude Include="src\sceneloadsave.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
+    <ClInclude Include="src\lights.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\cube_ps.hlsl">

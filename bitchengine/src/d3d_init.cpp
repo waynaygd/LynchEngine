@@ -151,6 +151,54 @@ void BuildEditorUI()
         ImGui::Combo("View", &g_gbufDebugMode, modes, IM_ARRAYSIZE(modes));
     }
     ImGui::End();
+
+    if (ImGui::Begin("Lights"))
+    {
+        if (ImGui::Button("Add Directional")) g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1 });
+        ImGui::SameLine();
+        if (ImGui::Button("Add Point")) {
+            LightAuthor a; a.type = LT_Point; a.posW = { 0,2,0 };
+            a.radius = 6; a.intensity = 3; g_lightsAuthor.push_back(a);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Spot")) {
+            LightAuthor a; a.type = LT_Spot; a.posW = { -2,2.5f,-1 };
+            a.dirW = { 0.6f,-0.5f,0.6f }; a.radius = 8; a.innerDeg = 18; a.outerDeg = 24;
+            a.intensity = 5; g_lightsAuthor.push_back(a);
+        }
+
+        ImGui::Separator();
+        for (int i = 0; i < (int)g_lightsAuthor.size(); ++i) {
+            ImGui::PushID(i);
+            if (ImGui::Selectable(("Light " + std::to_string(i)).c_str(), g_selectedLight == i))
+                g_selectedLight = i;
+            ImGui::PopID();
+        }
+
+        if (g_selectedLight >= 0 && g_selectedLight < (int)g_lightsAuthor.size()) {
+            auto& L = g_lightsAuthor[g_selectedLight];
+            const char* types[] = { "Directional","Point","Spot" };
+            int t = (int)L.type;
+            if (ImGui::Combo("Type", &t, types, IM_ARRAYSIZE(types))) L.type = (LightType)t;
+
+            ImGui::ColorEdit3("Color", &L.color.x);
+            ImGui::DragFloat("Intensity", &L.intensity, 0.05f, 0.0f, 100.0f);
+            if (L.type != LT_Dir) {
+                ImGui::DragFloat3("Position (W)", &L.posW.x, 0.1f);
+                ImGui::DragFloat("Radius", &L.radius, 0.1f, 0.1f, 100.0f);
+            }
+            if (L.type != LT_Point) { ImGui::DragFloat3("Direction (W)", &L.dirW.x, 0.01f, -1.0f, 1.0f); }
+            if (L.type == LT_Spot) {
+                ImGui::DragFloat("Inner (deg)", &L.innerDeg, 0.1f, 0.0f, 89.0f);
+                ImGui::DragFloat("Outer (deg)", &L.outerDeg, 0.1f, L.innerDeg, 90.0f);
+            }
+            if (ImGui::Button("Delete")) {
+                g_lightsAuthor.erase(g_lightsAuthor.begin() + g_selectedLight);
+                g_selectedLight = -1;
+            }
+        }
+    }
+    ImGui::End();
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -394,7 +442,7 @@ void CreateLightingRSandPSO()
     // t0..t2
     D3D12_DESCRIPTOR_RANGE range{};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 3;       // Albedo, Normal, Position
+    range.NumDescriptors = 4;       // Albedo, Normal, Position
     range.BaseShaderRegister = 0;   // t0
     range.RegisterSpace = 0;
     range.OffsetInDescriptorsFromTableStart = 0;
@@ -751,8 +799,15 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     CreateLightingRSandPSO();
 
     CreatePerObjectCB(1024);
-    CreateUploadCB<CBLighting>(g_cbLighting, g_cbLightingPtr);
-    std::memset(g_cbLightingPtr, 0, (sizeof(CBLighting) + 255) & ~255);
+    CreateUploadCB<CBLightingGPU>(g_cbLighting, g_cbLightingPtr);
+
+    if (g_lightsAuthor.empty()) {
+        g_lightsAuthor.push_back(LightAuthor{
+            LT_Dir, {1,1,1}, 1.0f,
+            {}, 0.0f,
+            {-0.4f,-1.0f,-0.2f}, 0, 0
+            });
+    }
 
     DX_CreateImGuiHeap();
     InitImGui(g_hWnd);
