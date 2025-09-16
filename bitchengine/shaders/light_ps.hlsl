@@ -7,9 +7,9 @@ struct Light
 {
     float3 color;
     float intensity; // 16
-    float3 posVS;
+    float3 posW;
     float radius; // 32 (для point/spot)
-    float3 dirVS;
+    float3 dirW;
     uint type; // 48 (type = 0/1/2)
     float cosInner;
     float cosOuter;
@@ -26,48 +26,48 @@ cbuffer CBLighting : register(b1)
     float2 _padA;
     uint lightCount;
     float3 _padB;
+    float4x4 invV;
     Light lights[MAX_LIGHTS];
-};
+};  
 
 Texture2D gAlbedo : register(t0);
 Texture2D gNormalR : register(t1);
 Texture2D gDepth : register(t2);
 SamplerState gSamp : register(s0);
 
-float3 ShadeDirectional(Light L, float3 nrm, float3 albedo)
+float3 ShadeDirectional(Light L, float3 nrmW, float3 albedo)
 {
-    float3 ld = normalize(-L.dirVS); // к источнику
-    float ndl = saturate(dot(nrm, ld));
+    float3 ld = normalize(-L.dirW);
+    float ndl = saturate(dot(nrmW, ld));
     return albedo * L.color * (L.intensity * ndl);
 }
 
-float3 ShadePoint(Light L, float3 P, float3 nrm, float3 albedo)
+float3 ShadePoint(Light L, float3 Pw, float3 nrmW, float3 albedo)
 {
-    float3 toL = L.posVS - P;
+    float3 toL = L.posW - Pw;
     float d = length(toL);
+    if (d > L.radius)
+        return 0;
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrm, ld));
-    // простая плавная аттенюация в радиусе
+    float ndl = saturate(dot(nrmW, ld));
     float atten = saturate(1.0 - d / L.radius);
-    atten *= atten; // квадратично
+    atten *= atten;
     return albedo * L.color * (L.intensity * ndl * atten);
 }
 
-float3 ShadeSpot(Light L, float3 P, float3 nrm, float3 albedo)
+float3 ShadeSpot(Light L, float3 Pw, float3 nrmW, float3 albedo)
 {
-    float3 toL = L.posVS - P;
+    float3 toL = L.posW - Pw;
     float d = length(toL);
+    if (d > L.radius)
+        return 0;
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrm, ld));
-
+    float ndl = saturate(dot(nrmW, ld));
     float atten = saturate(1.0 - d / L.radius);
     atten *= atten;
-
-    // конус: угол между -ld (в сторону источника) и L.dirVS
-    float c = dot(-ld, normalize(L.dirVS));
+    float c = dot(-ld, normalize(L.dirW));
     float spot = saturate((c - L.cosOuter) / max(L.cosInner - L.cosOuter, 1e-4));
-    spot *= spot; // сглаживание
-
+    spot *= spot;
     return albedo * L.color * (L.intensity * ndl * atten * spot);
 }
 
@@ -105,17 +105,22 @@ float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
 
     float3 P = ReconstructPosV(uv, depth, invP); // view-space позиция
     float3 color = 0;
+    
+    float3 Pview = ReconstructPosV(uv, depth, invP);
+    float3 Pw = mul(float4(Pview, 1), invV).xyz; // пиксель в world
+    float3 nrmV = normalize(gNormalR.Sample(gSamp, uv).rgb);
+    float3 nrmW = normalize(mul(nrmV, (float3x3) invV)); // нормаль в world
 
     [loop]
     for (uint i = 0; i < lightCount; ++i)
     {
         Light L = lights[i];
         if (L.type == LIGHT_TYPE_DIR)
-            color += ShadeDirectional(L, nrm, albedo);
+            color += ShadeDirectional(L, nrmW, albedo);
         else if (L.type == LIGHT_TYPE_POINT)
-            color += ShadePoint(L, P, nrm, albedo);
+            color += ShadePoint(L, Pw, nrmW, albedo);
         else
-            color += ShadeSpot(L, P, nrm, albedo);
+            color += ShadeSpot(L, Pw, nrmW, albedo);
     }
 
     // простенькая ambient добавка при желании:

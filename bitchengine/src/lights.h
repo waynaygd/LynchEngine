@@ -16,10 +16,11 @@ struct LightAuthor {                 // редактируем в мире (World space)
 
 struct LightGPU {                    // ДОЛЖНО совпадать с HLSL Light
     XMFLOAT3 color;   float intensity;
-    XMFLOAT3 posVS;   float radius;
-    XMFLOAT3 dirVS;   uint32_t type;
+    XMFLOAT3 posW;   float radius;
+    XMFLOAT3 dirW;   uint32_t type;
     float    cosInner, cosOuter, _pad0, _pad1;
 };
+
 static_assert(sizeof(LightGPU) % 16 == 0, "LightGPU must be 16B aligned");
 
 constexpr uint32_t MAX_LIGHTS = 16;
@@ -29,6 +30,7 @@ struct CBLightingGPU {               // ДОЛЖНО совпадать с HLSL cbuffer
     XMFLOAT4X4 invP;
     DirectX::XMFLOAT2 zRange; float _padA[2]{};
     uint32_t lightCount; float _padB[3]{};
+    XMFLOAT4X4 invV;
     LightGPU lights[MAX_LIGHTS];
 };
 static_assert(sizeof(CBLightingGPU) % 16 == 0, "CB must be 16B aligned");

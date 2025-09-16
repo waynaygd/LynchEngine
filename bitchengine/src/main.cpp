@@ -144,6 +144,7 @@ void RenderFrame()
 	}
 
 	CBLightingGPU L{};
+	L.camPosVS = { 0,0,0 };
 	L.debugMode = float(g_gbufDebugMode);
 
 	// invP
@@ -153,17 +154,13 @@ void RenderFrame()
 	L.zRange = { g_cam.zn, g_cam.zf };
 
 	// world->view
-	DirectX::XMMATRIX V = g_cam.View();
-	auto ToVSPoint = [&](const DirectX::XMFLOAT3& w)->DirectX::XMFLOAT3 {
-		DirectX::XMFLOAT3 o;
-		XMStoreFloat3(&o, XMVector3TransformCoord(XMLoadFloat3(&w), V));
-		return o;
-		};
-	auto ToVSDir = [&](const DirectX::XMFLOAT3& w)->DirectX::XMFLOAT3 {
-		DirectX::XMFLOAT3 o;
-		XMStoreFloat3(&o, XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V)));
-		return o;
-		};
+	XMMATRIX V = g_cam.View();
+	XMMATRIX invV = XMMatrixInverse(nullptr, V);
+	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); // в шейдер — как обычно, transposed
+
+	// V = g_cam.View();
+	auto ToVSPoint = [&](const XMFLOAT3& w) { XMFLOAT3 v; XMStoreFloat3(&v, XMVector3TransformCoord(XMLoadFloat3(&w), V)); return v; };
+	auto ToVSDir = [&](const XMFLOAT3& w) { XMFLOAT3 v; XMStoreFloat3(&v, XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V))); return v; };
 
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
 	for (uint32_t i = 0; i < n; ++i) {
@@ -172,11 +169,11 @@ void RenderFrame()
 		G.type = (uint32_t)A.type;
 		G.color = A.color;
 		G.intensity = A.intensity;
-		G.posVS = ToVSPoint(A.posW);
-		G.dirVS = ToVSDir(A.dirW);
+		G.posW = A.posW;                   // ← world
+		G.dirW = A.dirW;                   // ← world (нормализуй при редактировании)
 		G.radius = A.radius;
-		G.cosInner = cosf(DirectX::XMConvertToRadians(A.innerDeg));
-		G.cosOuter = cosf(DirectX::XMConvertToRadians(A.outerDeg));
+		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
+		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));
 		L.lights[i] = G;
 	}
 	L.lightCount = n;
