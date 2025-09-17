@@ -108,6 +108,7 @@ float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
     
     float3 Pview = ReconstructPosV(uv, depth, invP);
     float3 Pw = mul(float4(Pview, 1), invV).xyz; // пиксель в world
+    
     float3 nrmV = normalize(gNormalR.Sample(gSamp, uv).rgb);
     float3 nrmW = normalize(mul(nrmV, (float3x3) invV)); // нормаль в world
 

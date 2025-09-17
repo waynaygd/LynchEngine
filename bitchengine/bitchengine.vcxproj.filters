@@ -136,10 +136,10 @@
     <Text Include="shaders\gbuf_vs.hlsl">
       <Filter>Исходные файлы</Filter>
     </Text>
-    <Text Include="shaders\light_ps.hlsl">
+    <Text Include="shaders\light_vs.hlsl">
       <Filter>Исходные файлы</Filter>
     </Text>
-    <Text Include="shaders\light_vs.hlsl">
+    <Text Include="shaders\light_ps.hlsl">
       <Filter>Исходные файлы</Filter>
     </Text>
   </ItemGroup>

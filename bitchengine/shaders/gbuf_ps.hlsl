@@ -1,3 +1,4 @@
+//gbuf_ps.hlsl
 Texture2D gAlbedo : register(t0);
 SamplerState gSamp : register(s0);
 

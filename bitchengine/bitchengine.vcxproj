@@ -207,10 +207,12 @@
     <Text Include="shaders\gbuf_vs.hlsl">
       <FileType>Document</FileType>
     </Text>
-    <Text Include="shaders\light_ps.hlsl">
+    <Text Include="shaders\light_vs.hlsl">
       <FileType>Document</FileType>
     </Text>
-    <Text Include="shaders\light_vs.hlsl">
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="shaders\light_ps.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

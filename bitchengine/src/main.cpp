@@ -158,9 +158,15 @@ void RenderFrame()
 	XMMATRIX invV = XMMatrixInverse(nullptr, V);
 	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); // в шейдер — как обычно, transposed
 
-	// V = g_cam.View();
-	auto ToVSPoint = [&](const XMFLOAT3& w) { XMFLOAT3 v; XMStoreFloat3(&v, XMVector3TransformCoord(XMLoadFloat3(&w), V)); return v; };
-	auto ToVSDir = [&](const XMFLOAT3& w) { XMFLOAT3 v; XMStoreFloat3(&v, XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V))); return v; };
+	auto ToVSPoint = [&](const XMFLOAT3& w) {
+		XMFLOAT3 v; XMStoreFloat3(&v, XMVector3TransformCoord(XMLoadFloat3(&w), V));
+		return v;
+		};
+	auto ToVSDir = [&](const XMFLOAT3& w) {
+		XMFLOAT3 v; XMStoreFloat3(&v,
+			XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V)));
+		return v;
+		};
 
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
 	for (uint32_t i = 0; i < n; ++i) {
@@ -169,8 +175,8 @@ void RenderFrame()
 		G.type = (uint32_t)A.type;
 		G.color = A.color;
 		G.intensity = A.intensity;
-		G.posW = A.posW;                   // ← world
-		G.dirW = A.dirW;                   // ← world (нормализуй при редактировании)
+		G.posW = ToVSPoint(A.posW);  // ← теперь это posV
+		G.dirW = ToVSDir(A.dirW);    // ← теперь это dirV
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));

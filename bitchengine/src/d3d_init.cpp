@@ -85,7 +85,7 @@ void BuildEditorUI()
         ImGui::Separator();
         if (ImGui::Button("Add Cube")) {
             UINT cube = CreateCubeMeshGPU();
-            UINT tex = g_textures.empty() ? 0u : 2u; // назначь первую текстуру или сделай выбор в UI
+            UINT tex = 0u; 
             Scene_AddEntity(cube, tex, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
         }
 
@@ -726,9 +726,11 @@ void DX_LoadAssets()
 
     // МЕШИ
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
+    UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
 
     // СЦЕНА
     Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
+    Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
     // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
 }
 

@@ -1,3 +1,4 @@
+//gbuf_vs.hlsl
 cbuffer CBPerObject : register(b0)
 {
     float4x4 M;
