@@ -175,8 +175,14 @@ void RenderFrame()
 		G.type = (uint32_t)A.type;
 		G.color = A.color;
 		G.intensity = A.intensity;
-		G.posW = ToVSPoint(A.posW);  // ← теперь это posV
-		G.dirW = ToVSDir(A.dirW);    // ← теперь это dirVg
+		if (G.type == 0) {
+			G.posW = ToVSPoint(A.posW);  // ← теперь это posV
+			G.dirW = ToVSDir(A.dirW);    // ← теперь это dirVg
+		}
+		else {
+			G.posW = A.posW;  // ← теперь это posV
+			G.dirW = A.dirW;    // ← теперь это dirVg
+		}
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));

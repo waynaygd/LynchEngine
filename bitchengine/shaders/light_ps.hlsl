@@ -1,3 +1,4 @@
+//light_ps.hlsl
 #define MAX_LIGHTS 16
 #define LIGHT_TYPE_DIR   0
 #define LIGHT_TYPE_POINT 1
@@ -34,40 +35,44 @@ Texture2D gAlbedo : register(t0);
 Texture2D gNormalR : register(t1);
 Texture2D gDepth : register(t2);
 SamplerState gSamp : register(s0);
+SamplerState gSampZ : register(s1); // depth
 
-float3 ShadeDirectionalV(Light L, float3 nrmV, float3 albedo)
+float3 ShadeDirectional(Light L, float3 nrmW, float3 albedo)
 {
-    float3 ld = normalize(-L.dirW); // здесь L.dirW уже В VIEW!
-    float ndl = saturate(dot(nrmV, ld));
+    float3 ld = normalize(-L.dirW);
+    float ndl = saturate(dot(nrmW, ld));
     return albedo * L.color * (L.intensity * ndl);
 }
 
-float3 ShadePointV(Light L, float3 Pview, float3 nrmV, float3 albedo)
+float3 ShadePoint(Light L, float3 Pw, float3 nrmW, float3 albedo)
 {
-    float3 toL = L.posW - Pview; // L.posW уже В VIEW!
+        // ВНИМАНИЕ: L.posW хранит posV (мы осознанно используем текущее наполнение CB)
+    float3 toL = L.posW - Pw; // всё во view
     float d = length(toL);
     if (d > L.radius)
         return 0;
+
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrmV, ld));
+    float ndl = saturate(dot(nrmW, ld));
     float atten = saturate(1.0 - d / L.radius);
     atten *= atten;
     return albedo * L.color * (L.intensity * ndl * atten);
 }
 
-float3 ShadeSpotV(Light L, float3 Pview, float3 nrmV, float3 albedo)
+float3 ShadeSpot(Light L, float3 Pw, float3 nrmW, float3 albedo)
 {
-    float3 toL = L.posW - Pview;
+    float3 toL = L.posW - Pw; // всё во view
     float d = length(toL);
     if (d > L.radius)
         return 0;
+
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrmV, ld));
+    float ndl = saturate(dot(nrmW, ld));
     float atten = saturate(1.0 - d / L.radius);
     atten *= atten;
 
-    float3 spotDir = normalize(L.dirW); // VIEW
-    float c = dot(-ld, spotDir);
+    // L.dirW хранит dirV
+    float c = dot(-ld, normalize(L.dirW));
     float spot = saturate((c - L.cosOuter) / max(L.cosInner - L.cosOuter, 1e-4));
     spot *= spot;
 
@@ -102,11 +107,15 @@ float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
 
     float3 albedo = gAlbedo.Sample(gSamp, uv).rgb;
     float3 nrmV = normalize(gNormalR.Sample(gSamp, uv).rgb); // нормаль уже в view
-    float depth = gDepth.Sample(gSamp, uv).r;
+    
+    float depth = gDepth.Sample(gSampZ, uv).r;
+    
     if (depth >= 1.0 - 1e-5)
         return float4(0, 0, 0, 1);
     
     float3 Pview = ReconstructPosV(uv, depth, invP); // позиция в view
+    float3 Pw = mul(float4(Pview, 1), invV).xyz;
+    
     float3 color = 0;
 
     [loop]
@@ -114,11 +123,11 @@ float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
     {
         Light L = lights[i];
         if (L.type == LIGHT_TYPE_DIR)
-            color += ShadeDirectionalV(L, nrmV, albedo);
+            color += ShadeDirectional(L, nrmV, albedo);
         else if (L.type == LIGHT_TYPE_POINT)
-            color += ShadePointV(L, Pview, nrmV, albedo);
+            color += ShadePoint(L, Pw, nrmV, albedo);
         else
-            color += ShadeSpotV(L, Pview, nrmV, albedo);
+            color += ShadeSpot(L, Pw, nrmV, albedo);
     }
 
     color += albedo * 0.03;

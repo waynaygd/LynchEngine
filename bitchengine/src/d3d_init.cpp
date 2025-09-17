@@ -442,7 +442,7 @@ void CreateLightingRSandPSO()
     // t0..t2
     D3D12_DESCRIPTOR_RANGE range{};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 4;       // Albedo, Normal, Position
+    range.NumDescriptors = 3;       // Albedo, Normal, Position
     range.BaseShaderRegister = 0;   // t0
     range.RegisterSpace = 0;
     range.OffsetInDescriptorsFromTableStart = 0;
@@ -460,18 +460,23 @@ void CreateLightingRSandPSO()
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     // Самплер (линейный, clamp)
-    D3D12_STATIC_SAMPLER_DESC samp{};
-    samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-    samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    samp.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-    samp.ShaderRegister = 0; // s0
-    samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_STATIC_SAMPLER_DESC sampLin{};
+    sampLin.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    sampLin.AddressU = sampLin.AddressV = sampLin.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampLin.ShaderRegister = 0; // s0
+
+    D3D12_STATIC_SAMPLER_DESC sampDepth{};
+    sampDepth.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT; // <-- ВАЖНО
+    sampDepth.AddressU = sampDepth.AddressV = sampDepth.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampDepth.ShaderRegister = 1; // s1
+
+    D3D12_STATIC_SAMPLER_DESC samps[] = { sampLin, sampDepth };
 
     D3D12_ROOT_SIGNATURE_DESC rs{};
     rs.NumParameters = _countof(rp);
     rs.pParameters = rp;
-    rs.NumStaticSamplers = 1;
-    rs.pStaticSamplers = &samp;
+    rs.NumStaticSamplers = 2;
+    rs.pStaticSamplers = samps;
     rs.Flags =
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
