@@ -35,39 +35,42 @@ Texture2D gNormalR : register(t1);
 Texture2D gDepth : register(t2);
 SamplerState gSamp : register(s0);
 
-float3 ShadeDirectional(Light L, float3 nrmW, float3 albedo)
+float3 ShadeDirectionalV(Light L, float3 nrmV, float3 albedo)
 {
-    float3 ld = normalize(-L.dirW);
-    float ndl = saturate(dot(nrmW, ld));
+    float3 ld = normalize(-L.dirW); // здесь L.dirW уже ¬ VIEW!
+    float ndl = saturate(dot(nrmV, ld));
     return albedo * L.color * (L.intensity * ndl);
 }
 
-float3 ShadePoint(Light L, float3 Pw, float3 nrmW, float3 albedo)
+float3 ShadePointV(Light L, float3 Pview, float3 nrmV, float3 albedo)
 {
-    float3 toL = L.posW - Pw;
+    float3 toL = L.posW - Pview; // L.posW уже ¬ VIEW!
     float d = length(toL);
     if (d > L.radius)
         return 0;
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrmW, ld));
+    float ndl = saturate(dot(nrmV, ld));
     float atten = saturate(1.0 - d / L.radius);
     atten *= atten;
     return albedo * L.color * (L.intensity * ndl * atten);
 }
 
-float3 ShadeSpot(Light L, float3 Pw, float3 nrmW, float3 albedo)
+float3 ShadeSpotV(Light L, float3 Pview, float3 nrmV, float3 albedo)
 {
-    float3 toL = L.posW - Pw;
+    float3 toL = L.posW - Pview;
     float d = length(toL);
     if (d > L.radius)
         return 0;
     float3 ld = toL / max(d, 1e-6);
-    float ndl = saturate(dot(nrmW, ld));
+    float ndl = saturate(dot(nrmV, ld));
     float atten = saturate(1.0 - d / L.radius);
     atten *= atten;
-    float c = dot(-ld, normalize(L.dirW));
+
+    float3 spotDir = normalize(L.dirW); // VIEW
+    float c = dot(-ld, spotDir);
     float spot = saturate((c - L.cosOuter) / max(L.cosInner - L.cosOuter, 1e-4));
     spot *= spot;
+
     return albedo * L.color * (L.intensity * ndl * atten * spot);
 }
 
@@ -98,34 +101,27 @@ float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
     }
 
     float3 albedo = gAlbedo.Sample(gSamp, uv).rgb;
-    float3 nrm = normalize(gNormalR.Sample(gSamp, uv).rgb);
+    float3 nrmV = normalize(gNormalR.Sample(gSamp, uv).rgb); // нормаль уже в view
     float depth = gDepth.Sample(gSamp, uv).r;
     if (depth >= 1.0 - 1e-5)
         return float4(0, 0, 0, 1);
-
-    float3 P = ReconstructPosV(uv, depth, invP); // view-space позици€
+    
+    float3 Pview = ReconstructPosV(uv, depth, invP); // позици€ в view
     float3 color = 0;
-    
-    float3 Pview = ReconstructPosV(uv, depth, invP);
-    float3 Pw = mul(float4(Pview, 1), invV).xyz; // пиксель в world
-    
-    float3 nrmV = normalize(gNormalR.Sample(gSamp, uv).rgb);
-    float3 nrmW = normalize(mul(nrmV, (float3x3) invV)); // нормаль в world
 
     [loop]
     for (uint i = 0; i < lightCount; ++i)
     {
         Light L = lights[i];
         if (L.type == LIGHT_TYPE_DIR)
-            color += ShadeDirectional(L, nrmW, albedo);
+            color += ShadeDirectionalV(L, nrmV, albedo);
         else if (L.type == LIGHT_TYPE_POINT)
-            color += ShadePoint(L, Pw, nrmW, albedo);
+            color += ShadePointV(L, Pview, nrmV, albedo);
         else
-            color += ShadeSpot(L, Pw, nrmW, albedo);
+            color += ShadeSpotV(L, Pview, nrmV, albedo);
     }
 
-    // простенька€ ambient добавка при желании:
-    // color += albedo * 0.03;
+    color += albedo * 0.03;
 
     return float4(color, 1);
 }
