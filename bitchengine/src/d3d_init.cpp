@@ -147,7 +147,7 @@ void BuildEditorUI()
 
     if (ImGui::Begin("GBuffer Debug"))
     {
-        static const char* modes[] = { "Shaded", "Albedo", "Normal", "Depth" };
+        static const char* modes[] = { "Shaded", "Albedo", "Normal", "Depth", "for first point", "for first spot", "without normals"};
         ImGui::Combo("View", &g_gbufDebugMode, modes, IM_ARRAYSIZE(modes));
     }
     ImGui::End();

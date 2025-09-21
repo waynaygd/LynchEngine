@@ -14,6 +14,18 @@ void RenderFrame()
 
 	UINT drawIdx = 0;
 
+	static LARGE_INTEGER s_freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
+	static LARGE_INTEGER s_prev = [] { LARGE_INTEGER t; QueryPerformanceCounter(&t); return t; }();
+	LARGE_INTEGER now; QueryPerformanceCounter(&now);
+	float dt = float(double(now.QuadPart - s_prev.QuadPart) / double(s_freq.QuadPart));
+	s_prev = now;
+
+	UpdateInput(dt);
+	g_cam.UpdateView();
+
+	XMMATRIX V = g_cam.View();
+	XMMATRIX P = g_cam.Proj();
+
 	// ===== 1) GEOMETRY PASS -> GBUFFER (MRT) =====
 
 	// ★ Переводим все GBuffer в RENDER_TARGET (и обновляем их текущие состояния)
@@ -41,14 +53,6 @@ void RenderFrame()
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[1], c1, 0, nullptr);
 	g_cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-	static LARGE_INTEGER s_freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
-	static LARGE_INTEGER s_prev = [] { LARGE_INTEGER t; QueryPerformanceCounter(&t); return t; }();
-	LARGE_INTEGER now; QueryPerformanceCounter(&now);
-	float dt = float(double(now.QuadPart - s_prev.QuadPart) / double(s_freq.QuadPart));
-	s_prev = now;
-	UpdateInput(dt);
-	g_cam.UpdateView();
-
 	// RS/PSO (GBuffer)
 	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
 	g_cmdList->SetPipelineState(g_psoGBuffer.Get());
@@ -75,8 +79,6 @@ void RenderFrame()
 		XMMATRIX T = XMMatrixTranslation(e.pos.x, e.pos.y, e.pos.z);
 
 		XMMATRIX M = S * Rx * Ry * Rz * T;
-		XMMATRIX V = g_cam.View();
-		XMMATRIX P = g_cam.Proj();
 
 		XMMATRIX MIT = XMMatrixTranspose(XMMatrixInverse(nullptr, M));
 
@@ -144,54 +146,46 @@ void RenderFrame()
 	}
 
 	CBLightingGPU L{};
-	L.camPosVS = { 0,0,0 };
 	L.debugMode = float(g_gbufDebugMode);
-
-	// invP
-	DirectX::XMMATRIX P = g_cam.Proj();
-	DirectX::XMMATRIX invP = DirectX::XMMatrixInverse(nullptr, P);
-	XMStoreFloat4x4(&L.invP, XMMatrixTranspose(invP));
-	L.zRange = { g_cam.zn, g_cam.zf };
-
-	// world->view
-	XMMATRIX V = g_cam.View();
-	XMMATRIX invV = XMMatrixInverse(nullptr, V);
-	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); // в шейдер — как обычно, transposed
-
-	auto ToVSPoint = [&](const XMFLOAT3& w) {
-		XMFLOAT3 v; XMStoreFloat3(&v, XMVector3TransformCoord(XMLoadFloat3(&w), V));
-		return v;
-		};
-	auto ToVSDir = [&](const XMFLOAT3& w) {
-		XMFLOAT3 v; XMStoreFloat3(&v,
-			XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&w), V)));
-		return v;
-		};
-
+	
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
+
+	for (auto& A : g_lightsAuthor) {
+		if (A.type != LT_Point) {
+			XMVECTOR d = XMVector3Normalize(XMLoadFloat3(&A.dirW));
+			XMStoreFloat3(&A.dirW, d);
+		}
+	}
+
 	for (uint32_t i = 0; i < n; ++i) {
 		const auto& A = g_lightsAuthor[i];
 		LightGPU G{};
 		G.type = (uint32_t)A.type;
 		G.color = A.color;
 		G.intensity = A.intensity;
-		if (G.type == 0) {
-			G.posW = ToVSPoint(A.posW);  // ← теперь это posV
-			G.dirW = ToVSDir(A.dirW);    // ← теперь это dirVg
-		}
-		else {
-			G.posW = A.posW;  // ← теперь это posV
-			G.dirW = A.dirW;    // ← теперь это dirVg
-		}
+
+		// ВАЖНО: оставляем в WORLD
+		G.posW = A.posW;
+		G.dirW = A.dirW; // нормализуй при редактировании
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));
+
 		L.lights[i] = G;
 	}
 	L.lightCount = n;
+	L.camPosVS = { 0,0,0 };
+
+	// матрицы оставляй как было
+	XMMATRIX invP = XMMatrixInverse(nullptr, P);
+	XMStoreFloat4x4(&L.invP, XMMatrixTranspose(invP));
+
+	XMMATRIX invV = XMMatrixInverse(nullptr, V);
+	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); // пусть лежит, PS его не обязан трогать
 
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
+
 
 	// fullscreen triangle
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

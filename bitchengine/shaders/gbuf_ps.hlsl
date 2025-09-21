@@ -23,9 +23,9 @@ GOut main(PSIn i)
     // Если SRV UNORM, тогда делай pow(sample, 2.2).
     float3 albedo = gAlbedo.Sample(gSamp, i.uv).rgb;
 
-    float3 nrm = normalize(i.nrmV);
+    float3 nrmW = normalize(i.nrmV);
 
     o.Albedo = float4(albedo, 1);
-    o.NormalR = float4(normalize(i.nrmV), 1.0);
+    o.NormalR = float4(nrmW, 1.0);
     return o;
 }

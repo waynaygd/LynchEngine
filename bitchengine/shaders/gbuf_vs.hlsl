@@ -32,8 +32,8 @@ VSOut main(VSIn i)
     o.posH = mul(vpos, P);
 
     // нормаль: object -> world (через (M^-1)^T), затем world -> view
-    float3 nrmW = normalize(mul(i.nrm, (float3x3) MIT)); // row * matrix (как и у позиций)
-    o.nrmV = normalize(mul(nrmW, (float3x3) V)); // в view-space
+    float3 nrmW = normalize(mul(i.nrm, (float3x3) MIT));
+    o.nrmV = nrmW; // кладЄм ћ»–ќ¬”ё нормаль (название пол€ можно потом переименовать)
 
     o.uv = i.uv * uvMul;
     return o;
