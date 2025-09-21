@@ -60,6 +60,9 @@
     <ClCompile Include="src\sceneloadsave.cpp">
       <Filter>Файлы ресурсов</Filter>
     </ClCompile>
+    <ClCompile Include="src\terrain.cpp">
+      <Filter>Файлы ресурсов</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\someshit.h">
@@ -122,6 +125,9 @@
     <ClInclude Include="src\lights.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
+    <ClInclude Include="src\terrain.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\cube_ps.hlsl">
@@ -140,6 +146,12 @@
       <Filter>Исходные файлы</Filter>
     </Text>
     <Text Include="shaders\light_ps.hlsl">
+      <Filter>Исходные файлы</Filter>
+    </Text>
+    <Text Include="shaders\terrain_ps.hlsl">
+      <Filter>Исходные файлы</Filter>
+    </Text>
+    <Text Include="shaders\terrain_vs.hlsl">
       <Filter>Исходные файлы</Filter>
     </Text>
   </ItemGroup>

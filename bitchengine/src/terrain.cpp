@@ -1,0 +1,34 @@
+#include "terrain.h"
+#include <gpu_upload.h>
+#include "someshit.h"
+
+void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N) {
+    std::vector<XMFLOAT2> verts;
+    verts.reserve(N * N);
+    for (UINT y = 0; y < N; ++y)
+        for (UINT x = 0; x < N; ++x)
+            verts.push_back({ float(x) / (N - 1), float(y) / (N - 1) }); // uv-координаты
+
+    std::vector<uint16_t> indices;
+    indices.reserve((N - 1) * (N - 1) * 6);
+    for (UINT y = 0; y < N - 1; ++y) {
+        for (UINT x = 0; x < N - 1; ++x) {
+            uint16_t i0 = y * N + x;
+            uint16_t i1 = y * N + (x + 1);
+            uint16_t i2 = (y + 1) * N + x;
+            uint16_t i3 = (y + 1) * N + (x + 1);
+            indices.insert(indices.end(), { i0,i1,i2, i2,i1,i3 });
+        }
+    }
+
+    // Загрузить в GPU (как у тебя CreateDefaultBuffer в gpu_upload.h)
+    ComPtr<ID3D12Resource> vbUpload, ibUpload;
+    CreateDefaultBuffer(dev, cmd, verts.data(), sizeof(XMFLOAT2) * verts.size(),
+        g_terrainGrid.vb, vbUpload, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+    CreateDefaultBuffer(dev, cmd, indices.data(), sizeof(uint16_t) * indices.size(),
+        g_terrainGrid.ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+    g_terrainGrid.vbv = { g_terrainGrid.vb->GetGPUVirtualAddress(), sizeof(XMFLOAT2), (UINT)verts.size() };
+    g_terrainGrid.ibv = { g_terrainGrid.ib->GetGPUVirtualAddress(), (UINT)indices.size(), DXGI_FORMAT_R16_UINT };
+    g_terrainGrid.indexCount = (UINT)indices.size();
+}

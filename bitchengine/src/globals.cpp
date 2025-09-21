@@ -125,3 +125,17 @@ D3D12_RESOURCE_STATES g_gbufState[GBUF_COUNT] = {
 
 D3D12_RESOURCE_STATES depthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 D3D12_RESOURCE_STATES depthStateB = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+ComPtr<ID3D12RootSignature> g_rsTerrain;
+ComPtr<ID3D12PipelineState> g_psoTerrain;
+
+ComPtr<ID3D12Resource> g_cbTerrain;
+uint8_t* g_cbTerrainPtr = nullptr;
+
+MeshGPU g_terrainGrid;
+
+ComPtr<ID3D12Resource> g_cbScene;  // upload
+uint8_t* g_cbScenePtr = nullptr;
+
+UINT heightSrvIndex;
+D3D12_GPU_DESCRIPTOR_HANDLE heightGpu;

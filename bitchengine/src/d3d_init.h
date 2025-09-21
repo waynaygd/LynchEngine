@@ -18,6 +18,7 @@ void DX_CreateRTVs();
 void DX_CreateGBuffer(UINT w, UINT h);
 void CreateGBufferRSandPSO();
 void CreateLightingRSandPSO();
+void CreateTerrainRSandPSO();
 void DX_CreateDepth(UINT w, UINT h);
 void DX_CreateSRVHeap(UINT numDescriptors = 1);
 void DX_CreateImGuiHeap();
@@ -60,3 +61,4 @@ void Transition(ID3D12GraphicsCommandList* cmd,
     D3D12_RESOURCE_STATES newState);
 
 void CreatePerObjectCB(UINT maxPerFrame);
+void CreateTerrainCB();

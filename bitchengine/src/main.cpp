@@ -24,7 +24,7 @@ void RenderFrame()
 	g_cam.UpdateView();
 
 	XMMATRIX V = g_cam.View();
-	XMMATRIX P = g_cam.Proj();
+	XMMATRIX P = g_cam.Proj();	
 
 	// ===== 1) GEOMETRY PASS -> GBUFFER (MRT) =====
 
@@ -110,6 +110,31 @@ void RenderFrame()
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+	// === Terrain test ===
+	g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
+	g_cmdList->SetPipelineState(g_psoTerrain.Get());
+
+	XMMATRIX VP = XMMatrixMultiply(V, P);
+	CBScene sc; XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(VP)); // HLSL row-major по умолчанию
+	memcpy(g_cbScenePtr, &sc, sizeof(sc));
+
+	ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
+	g_cmdList->SetDescriptorHeaps(2, heaps);
+
+	CBTerrainTile cb = { {0,0}, 10.0f, 5.0f }; // один тайл 10x10
+	memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
+
+	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); // b0
+	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());       // b1
+	g_cmdList->SetDescriptorHeaps(1, g_srvHeap.GetAddressOf());
+	g_cmdList->SetGraphicsRootDescriptorTable(2, heightGpu);                    // t0
+
+	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
+	g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
+	g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
+
 
 	// ===== 3) LIGHTING PASS -> BACKBUFFER =====
 

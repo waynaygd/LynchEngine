@@ -21,6 +21,7 @@
 #include "obj_loader.h"
 #include "sceneloadsave.h"
 #include "lights.h"
+#include "terrain.h"
 
 //externals
 #include <d3dx12.h>
@@ -209,8 +210,19 @@ extern D3D12_RESOURCE_STATES g_gbufState[GBUF_COUNT];
 extern D3D12_RESOURCE_STATES depthState;
 extern D3D12_RESOURCE_STATES depthStateB;
 
+extern ComPtr<ID3D12RootSignature> g_rsTerrain;
+extern ComPtr<ID3D12PipelineState> g_psoTerrain;
 
+extern ComPtr<ID3D12Resource> g_cbTerrain;
+extern uint8_t* g_cbTerrainPtr;
 
+extern MeshGPU g_terrainGrid;
+
+extern ComPtr<ID3D12Resource> g_cbScene;  // upload
+extern uint8_t* g_cbScenePtr;
+
+extern UINT heightSrvIndex;
+extern D3D12_GPU_DESCRIPTOR_HANDLE heightGpu;
 
 // gbuffer
 

@@ -1,41 +1,37 @@
-Texture2D Height : register(t0);
-SamplerState Samp : register(s0);
-
-cbuffer CBScene : register(b0)
+cbuffer CBTerrainTile : register(b0)
 {
-    float4x4 ViewProj;
-    float HeightScale;
+    float2 tileOrigin;
+    float tileSize;
+    float heightScale;
 };
 
-cbuffer CBTile : register(b1)
+cbuffer CBScene : register(b1)
 {
-    float2 tileOriginXZ;
-    float tileSize;
-    float _pad;
-    float2 atlasUV0;
-    float2 atlasUV1;
-}
+    float4x4 gViewProj; // row-major Ì‡ CPU “–¿Õ—œŒÕ»–Œ¬¿“‹
+};
+
+Texture2D<float> Height : register(t0);
+SamplerState samp : register(s0);
 
 struct VSIn
 {
     float2 uv : TEXCOORD0;
-};
+}; // ? ËÌ‰ÂÍÒ 0 ˇ‚ÌÓ
 struct VSOut
 {
-    float4 pos : SV_Position;
+    float4 posH : SV_Position;
     float2 uv : TEXCOORD0;
 };
 
-VSOut main(VSIn i)
+VSOut main(VSIn vin)
 {
-    float2 uvLocal = i.uv;
-    float2 uvAtlas = lerp(atlasUV0, atlasUV1, uvLocal);
-    float h = Height.SampleLevel(Samp, uvAtlas, 0).r;
-    float3 posW = float3(tileOriginXZ.x + uvLocal.x * tileSize,
-                         h * HeightScale,
-                         tileOriginXZ.y + uvLocal.y * tileSize);
+    float h = Height.SampleLevel(samp, vin.uv, 0);
+    float3 pw = float3(tileOrigin.x + vin.uv.x * tileSize,
+                       h * heightScale,
+                       tileOrigin.y + vin.uv.y * tileSize);
+
     VSOut o;
-    o.pos = mul(float4(posW, 1), ViewProj);
-    o.uv = uvAtlas;
+    o.posH = mul(float4(pw, 1), gViewProj);
+    o.uv = vin.uv;
     return o;
 }

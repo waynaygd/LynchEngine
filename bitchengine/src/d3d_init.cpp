@@ -514,6 +514,84 @@ void CreateLightingRSandPSO()
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoLighting)));
 }
 
+void CreateTerrainRSandPSO()
+{
+    D3D12_DESCRIPTOR_RANGE srvRange{};
+    srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvRange.NumDescriptors = 1;      // t0
+    srvRange.BaseShaderRegister = 0;
+
+    D3D12_ROOT_PARAMETER params[3]{};
+
+    // b0: CBTerrainTile (VS)
+    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[0].Descriptor.ShaderRegister = 0;
+    params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+    // b1: CBScene (VS)
+    params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[1].Descriptor.ShaderRegister = 1;
+    params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+    // t0: Height (VS читает, но дадим ALL — безопаснее)
+    params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[2].DescriptorTable.NumDescriptorRanges = 1;
+    params[2].DescriptorTable.pDescriptorRanges = &srvRange;
+    params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_STATIC_SAMPLER_DESC samp{};
+    samp.Filter = D3D12_FILTER_ANISOTROPIC;
+    samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samp.MaxAnisotropy = 8;
+    samp.ShaderRegister = 0; // s0
+    samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_ROOT_SIGNATURE_DESC rs{};
+    rs.NumParameters = _countof(params);
+    rs.pParameters = params;
+    rs.NumStaticSamplers = 1;
+    rs.pStaticSamplers = &samp;
+    rs.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ComPtr<ID3DBlob> sig, err;
+    HR(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    if (err && err->GetBufferSize()) {
+        OutputDebugStringA((char*)err->GetBufferPointer()); // полезно увидеть текст
+    }
+    HR(g_device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&g_rsTerrain)));
+
+    // --- компиляция шейдеров с проверками ---
+    auto ter_vs = CompileShaderFromFile(L"shaders\\terrain_vs.hlsl", "main", "vs_5_1");
+    auto ter_ps = CompileShaderFromFile(L"shaders\\terrain_ps.hlsl", "main", "ps_5_1");
+    if (!ter_vs || !ter_ps) {
+        MessageBoxA(nullptr, "terrain VS/PS failed to compile (see debug output)", "Shader Error", MB_OK);
+        return; // иначе PSO точно упадёт
+    }
+
+    D3D12_INPUT_ELEMENT_DESC il[] = {
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+    };
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+    pso.pRootSignature = g_rsTerrain.Get();
+    pso.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
+    pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
+    pso.InputLayout = { il, _countof(il) };
+    pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = g_backBufferFormat; // сейчас рисуем в backbuffer
+    pso.DSVFormat = g_depthFormat;
+    pso.SampleDesc = { 1,0 };
+
+    HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrain)));
+}
+
 const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R32_TYPELESS; // ресурс
 const DXGI_FORMAT DEPTH_DSV_FMT = DXGI_FORMAT_D32_FLOAT;    // DSV
 const DXGI_FORMAT DEPTH_SRV_FMT = DXGI_FORMAT_R32_FLOAT;    // SRV
@@ -729,6 +807,11 @@ void DX_LoadAssets()
     UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
 
+    UINT terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
+    UINT terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
+    UINT terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
+
+    heightGpu = g_textures[terrain_height].gpu;
     // МЕШИ
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
@@ -772,6 +855,19 @@ void CreatePerObjectCB(UINT maxPerFrame)
     HR(g_cbPerObject->Map(0, nullptr, reinterpret_cast<void**>(&g_cbPerObjectPtr)));
 }
 
+void CreateTerrainCB()
+{
+    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(256); // 1 tile пока
+    HR(g_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_cbTerrain)));
+    HR(g_cbTerrain->Map(0, nullptr, reinterpret_cast<void**>(&g_cbTerrainPtr)));
+
+    HR(g_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_cbScene)));
+    HR(g_cbScene->Map(0, nullptr, (void**)&g_cbScenePtr));
+}
+
 template<class T>
 static void CreateUploadCB(ComPtr<ID3D12Resource>& cb, uint8_t*& mappedPtr) {
     CD3DX12_HEAP_PROPERTIES heapUpload(D3D12_HEAP_TYPE_UPLOAD);
@@ -803,9 +899,12 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     DX_CreateGBuffer(w, h);
     CreateGBufferRSandPSO();
 
+    CreateTerrainRSandPSO();
+
     CreateLightingRSandPSO();
 
     CreatePerObjectCB(1024);
+    CreateTerrainCB();
     CreateUploadCB<CBLightingGPU>(g_cbLighting, g_cbLightingPtr);
 
     if (g_lightsAuthor.empty()) {

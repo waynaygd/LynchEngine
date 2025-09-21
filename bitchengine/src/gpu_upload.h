@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 #include <comdef.h>
 #include <d3dx12.h>
+#include <someshit.h>
 
 inline void CreateDefaultBuffer(
     ID3D12Device* device,

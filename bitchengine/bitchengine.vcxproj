@@ -163,6 +163,7 @@
     <ClCompile Include="src\obj_loader.cpp" />
     <ClCompile Include="src\sceneloadsave.cpp" />
     <ClCompile Include="src\shaders_util.cpp" />
+    <ClCompile Include="src\terrain.cpp" />
     <ClCompile Include="src\textures.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -184,6 +185,7 @@
     <ClInclude Include="src\obj_loader.h" />
     <ClInclude Include="src\sceneloadsave.h" />
     <ClInclude Include="src\someshit.h" />
+    <ClInclude Include="src\terrain.h" />
     <ClInclude Include="src\textures.h" />
     <ClInclude Include="src\uploader.h" />
   </ItemGroup>
@@ -213,6 +215,14 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\light_ps.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="shaders\terrain_ps.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+    <Text Include="shaders\terrain_vs.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
