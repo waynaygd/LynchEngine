@@ -224,6 +224,10 @@ extern uint8_t* g_cbScenePtr;
 extern UINT heightSrvIndex;
 extern D3D12_GPU_DESCRIPTOR_HANDLE heightGpu;
 
+extern UINT terrain_diffuse;
+extern UINT terrain_normal;
+extern UINT terrain_height;
+
 // gbuffer
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);

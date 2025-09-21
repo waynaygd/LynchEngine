@@ -26,3 +26,5 @@ struct TerrainTile {
     ComPtr<ID3D12Resource> cbRes;  // upload CB
     uint8_t* cbPtr = nullptr;
 };
+
+void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N);

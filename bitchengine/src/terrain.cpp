@@ -28,7 +28,13 @@ void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N
     CreateDefaultBuffer(dev, cmd, indices.data(), sizeof(uint16_t) * indices.size(),
         g_terrainGrid.ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
-    g_terrainGrid.vbv = { g_terrainGrid.vb->GetGPUVirtualAddress(), sizeof(XMFLOAT2), (UINT)verts.size() };
-    g_terrainGrid.ibv = { g_terrainGrid.ib->GetGPUVirtualAddress(), (UINT)indices.size(), DXGI_FORMAT_R16_UINT };
+    g_terrainGrid.vbv.BufferLocation = g_terrainGrid.vb->GetGPUVirtualAddress();
+    g_terrainGrid.vbv.SizeInBytes = UINT(sizeof(DirectX::XMFLOAT2) * verts.size());
+    g_terrainGrid.vbv.StrideInBytes = sizeof(DirectX::XMFLOAT2);
+
+    g_terrainGrid.ibv.BufferLocation = g_terrainGrid.ib->GetGPUVirtualAddress();
+    g_terrainGrid.ibv.SizeInBytes = UINT(sizeof(uint16_t) * indices.size());
+    g_terrainGrid.ibv.Format = DXGI_FORMAT_R16_UINT;
+
     g_terrainGrid.indexCount = (UINT)indices.size();
 }

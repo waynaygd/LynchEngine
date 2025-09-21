@@ -1,4 +1,10 @@
-float4 main() : SV_Target
+struct PSIn
 {
-    return float4(0.6, 0.65, 0.7, 1);
-}
+    float4 posH : SV_Position;
+    float2 uv : TEXCOORD0;
+    float h : TEXCOORD1;
+};
+float4 main(PSIn i) : SV_Target
+{
+    return float4(i.h.xxx, 1);
+} // серый по высоте

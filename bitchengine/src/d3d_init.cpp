@@ -580,8 +580,10 @@ void CreateTerrainRSandPSO()
     pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
     pso.InputLayout = { il, _countof(il) };
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState.DepthEnable = FALSE;
     pso.SampleMask = UINT_MAX;
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pso.NumRenderTargets = 1;
@@ -802,24 +804,34 @@ auto dump = [](UINT id) {
 // ────────────────────────────────────────────────────────────────────────────
 void DX_LoadAssets()
 {
-    // ТЕКСТУРЫ
+
+    //terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
+    //terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
+    //terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
+
     UINT texError = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
     UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
 
-    UINT terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
-    UINT terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
-    UINT terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
-
-    heightGpu = g_textures[terrain_height].gpu;
     // МЕШИ
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
 
     // СЦЕНА
     Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-    Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
+    //Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
     // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
+}
+
+void DX_LoadTerrain()
+{
+
+    CreateTerrainGrid(g_device.Get(), g_uploadList.Get(), 128);   // <-- ОБЯЗАТЕЛЬНО
+
+    terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
+    terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
+    terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
+
 }
 
 
@@ -920,6 +932,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     DX_CreateFrameCmdObjects();
 
+    DX_LoadTerrain();
     DX_LoadAssets();    
     DX_CreateRootSigAndPSO();
     DX_InitCamera(w, h);

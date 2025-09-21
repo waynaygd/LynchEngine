@@ -139,3 +139,7 @@ uint8_t* g_cbScenePtr = nullptr;
 
 UINT heightSrvIndex;
 D3D12_GPU_DESCRIPTOR_HANDLE heightGpu;
+
+UINT terrain_diffuse;
+UINT terrain_normal;
+UINT terrain_height;

@@ -36,6 +36,7 @@ void DX_InitCamera(UINT w, UINT h);
 // ─── «крючки» для ассетов (пока пусто) ──────────────────────────────────────
 void DX_LoadAssets();  // здесь позже вызовешь UploadOBJ/UploadTexture/…
 // (сейчас можно оставить пустым — всё соберётся)
+void DX_LoadTerrain();
 
 // ─── главный оркестратор ────────────────────────────────────────────────────
 void InitD3D12(HWND hWnd, UINT w, UINT h);
