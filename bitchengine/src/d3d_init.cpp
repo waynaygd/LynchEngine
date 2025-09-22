@@ -623,6 +623,31 @@ void CreateTerrainRSandPSO()
     pso.SampleDesc = { 1, 0 };
 
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrain)));
+
+    // тот же root (g_rsTerrain), те же шейдеры, но другой input layout, если нужно
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_skirt = {};
+    pso_skirt.pRootSignature = g_rsTerrain.Get();
+    pso_skirt.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
+    pso_skirt.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
+    pso_skirt.InputLayout = { ilSkirt, _countof(ilSkirt) }; // uv + skirtK
+    pso_skirt.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+
+    auto rast = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    rast.CullMode = D3D12_CULL_MODE_FRONT;  // как и было
+    // ключ: небольшой depth bias
+    rast.DepthBias = 2;       // integer bias
+    rast.SlopeScaledDepthBias = 1.0f;    // «наклонный» bias
+    rast.DepthBiasClamp = 0.0f;
+    pso.RasterizerState = rast;
+
+    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT); // DepthFunc=LESS
+    pso.NumRenderTargets = 2;
+    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    pso.DSVFormat = g_depthFormat;
+    pso.SampleDesc = { 1,0 };
+
+    HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrainSkirt)));
 }
 
 const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R32_TYPELESS; // ресурс
@@ -874,7 +899,7 @@ void DX_LoadTerrain()
     terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
     terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
 
-    BuildLeafTilesGrid(uiGridN, uiWorldSize, g_heightMap,
+    BuildLeafTilesGrid(uiGridN, uiWorldSize, g_heightMap, g_uiSkirtDepth,
         g_textures[terrain_height].gpu,
         g_textures[terrain_diffuse].gpu);
 

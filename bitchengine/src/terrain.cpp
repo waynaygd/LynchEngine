@@ -49,7 +49,7 @@ void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N
     g_terrainGrid.indexCount = (UINT)indices.size();
 }
 
-void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale,
+void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, float skirtDepth,
     D3D12_GPU_DESCRIPTOR_HANDLE heightSrv,
     D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv)
 {
@@ -68,6 +68,7 @@ void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale,
             tr.cb.tileOrigin = { start + x * leaf, start + y * leaf };
             tr.cb.tileSize = leaf;
             tr.cb.heightScale = heightScale;
+            tr.cb.skirtDepth = skirtDepth;
             tr.heightSrv = heightSrv;      // t0
             tr.diffuseSrv = diffuseSrv;     // t1
             tr.aabbMin = { tr.cb.tileOrigin.x,          hminY, tr.cb.tileOrigin.y };
@@ -106,7 +107,7 @@ void InitTerrainTiling()
 {
     const uint32_t N = 8;              // начни с 8?8
     const float    W = 800.0f;         // размер мира
-    BuildLeafTilesGrid(N, W, g_heightMap,
+    BuildLeafTilesGrid(N, W, g_heightMap, g_uiSkirtDepth,
         g_textures[terrain_height].gpu,
         g_textures[terrain_diffuse].gpu);
 }
@@ -133,11 +134,11 @@ float DistanceToAabbHorizontal(const XMFLOAT3& p,
     return (std::max)(d, 0.001f);
 }
 
-void RebuildTerrain(uint32_t gridN, float worldSize, float heightScale,
+void RebuildTerrain(uint32_t gridN, float worldSize, float heightScale, float skirtDepth,
     D3D12_GPU_DESCRIPTOR_HANDLE heightSrv,
     D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv)
 {
-    BuildLeafTilesGrid(gridN, worldSize, heightScale, heightSrv, diffuseSrv);
+    BuildLeafTilesGrid(gridN, worldSize, heightScale, skirtDepth, heightSrv, diffuseSrv);
 }
 
 void SelectNodes(uint32_t id,

@@ -78,16 +78,17 @@ int g_uiAddrMode = 0;   // 0..4 (Wrap, Mirror, Clamp, Border, MirrorOnce)
 int g_uiFilter = 1;   // 0..2 (Point, Linear, Anisotropic)
 int g_uiAniso = 8;   // 1..16 (используется, если Anisotropic)
 
-float g_heightMap = 2;
+float g_heightMap = 12;
 bool g_terrainonetile = 0;
 
 float g_uvMul = 1.0f;
 
-int   uiGridN = 8;      // 2..512
-float uiWorldSize = 800.f;  // метры
+int   uiGridN = 4;      // 2..512
+float uiWorldSize = 400.f;  // метры
 int   uiTileVertsN = 75;     // вершины в одном тайле (CreateTerrainGrid)
 int   uiLodPx = 40;
 float g_lodThresholdPx = 120.f;
+float g_uiSkirtDepth = 5.f;
 
 ComPtr<ID3D12Resource> g_cbTerrainTiles;
 uint8_t* g_cbTerrainTilesPtr = nullptr;
@@ -141,6 +142,7 @@ D3D12_RESOURCE_STATES depthStateB = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
 ComPtr<ID3D12RootSignature> g_rsTerrain;
 ComPtr<ID3D12PipelineState> g_psoTerrain;
+ComPtr<ID3D12PipelineState> g_psoTerrainSkirt;
 
 ComPtr<ID3D12Resource> g_cbTerrain;
 uint8_t* g_cbTerrainPtr = nullptr;

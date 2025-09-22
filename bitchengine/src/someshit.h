@@ -214,6 +214,7 @@ extern D3D12_RESOURCE_STATES depthStateB;
 
 extern ComPtr<ID3D12RootSignature> g_rsTerrain;
 extern ComPtr<ID3D12PipelineState> g_psoTerrain;
+extern ComPtr<ID3D12PipelineState> g_psoTerrainSkirt;
 
 extern ComPtr<ID3D12Resource> g_cbTerrain;
 extern uint8_t* g_cbTerrainPtr;
@@ -240,6 +241,7 @@ extern float uiWorldSize;  // метры
 extern int   uiTileVertsN;     // вершины в одном тайле (CreateTerrainGrid)
 extern int   uiLodPx;
 extern float g_lodThresholdPx;
+extern float g_uiSkirtDepth;
 
 extern ComPtr<ID3D12Resource> g_cbTerrainTiles;
 extern uint8_t* g_cbTerrainTilesPtr;

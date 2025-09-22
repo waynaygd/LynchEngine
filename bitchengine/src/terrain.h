@@ -22,9 +22,10 @@ static_assert(sizeof(CBScene) % 16 == 0);
 struct CBTerrainTile {
     XMFLOAT2 tileOrigin;   // world-координаты начала тайла (x,z)
     float    tileSize;     // длина тайла в метрах
-    float    heightScale;  // во сколько умножать значение из heightmap
+    float    heightScale;  // во сколько умножать значение из heightmap          
+    float    skirtDepth;
 };
-static_assert(sizeof(CBTerrainTile) % 16 == 0, "CB must be 16-byte aligned");
+static_assert(sizeof(CBTerrainTile) % 20 == 0, "CB must be 20-byte aligned");
 
 // CPU-структура тайла
 struct TerrainTile {
@@ -70,7 +71,7 @@ void UpdateTilesHeight(float newScale);
 void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N, ComPtr<ID3D12Resource>& vbUpOut,
     ComPtr<ID3D12Resource>& ibUpOut);
 
-void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale,
+void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, float skirtDepth,
     D3D12_GPU_DESCRIPTOR_HANDLE heightSrv,
     D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv);
 

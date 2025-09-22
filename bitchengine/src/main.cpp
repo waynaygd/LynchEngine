@@ -171,6 +171,28 @@ void RenderFrame()
 				g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
 				++leaves_count;
 			}
+			/*
+			g_cmdList->SetPipelineState(g_psoTerrainSkirt.Get());
+			g_cmdList->IASetVertexBuffers(0, 1, &g_terrainSkirt.vbv);
+			g_cmdList->IASetIndexBuffer(&g_terrainSkirt.ibv);
+
+			for (uint32_t nid : drawNodes)
+			{
+				const QNode& q = g_nodes[nid];
+				const TileRes& tr = g_tiles[q.tileIndex];
+
+				const size_t off = size_t(q.tileIndex) * g_cbTerrainStride;
+				// если выше уже писали CB — можно НЕ копировать ещё раз; оставлю для простоты:
+				std::memcpy(g_cbTerrainTilesPtr + off, &tr.cb, sizeof(tr.cb));
+
+				g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrainTiles->GetGPUVirtualAddress() + off); // b0 (CBTerrainTile)
+				g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());              // b1 (CBScene)
+				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);  // t0 (height)
+				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv); // t1 (diffuse)
+
+				g_cmdList->DrawIndexedInstanced(g_terrainSkirt.indexCount, 1, 0, 0, 0);
+			}
+			*/
 		}
 	}
 	else {
