@@ -202,7 +202,7 @@ void BuildEditorUI()
 
     if (ImGui::Begin("Terrain"))
     {
-        ImGui::SliderFloat("Height Map", &g_heightMap, 0, 75.f);
+        ImGui::SliderFloat("Height Map", &g_heightMap, 0, 5.f);
     }
     ImGui::End();
 }
@@ -601,19 +601,20 @@ void CreateTerrainRSandPSO()
     pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
     pso.InputLayout = { il, _countof(il) };
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    pso.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    pso.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+
     pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+
     pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     pso.DepthStencilState.DepthEnable = TRUE;
-    pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; // или LESS_EQUAL
 
     pso.SampleMask = UINT_MAX;
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    pso.NumRenderTargets = 1;
-    pso.RTVFormats[0] = g_backBufferFormat; // сейчас рисуем в backbuffer
+    pso.NumRenderTargets = 2;
+    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
     pso.DSVFormat = g_depthFormat;
-    pso.SampleDesc = { 1,0 };
+    pso.SampleDesc = { 1, 0 };
 
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrain)));
 }
