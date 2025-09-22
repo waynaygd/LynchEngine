@@ -12,7 +12,7 @@ struct Camera {
     float fovY = XM_PIDIV4;        // 45∞
     float aspect = 16.0f / 9.0f;
     float zn = 0.1f;
-    float zf = 100.0f;
+    float zf = 3000.0f;
 
     // —корости
     float moveSpeed = 3.5f;          // м/с

@@ -3,6 +3,9 @@
 #include <DirectXMath.h>
 #include <wrl/client.h>
 #include <d3d12.h>
+#include "mesh.h"
+#include "vector"
+#include <DirectXCollision.h>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -38,7 +41,6 @@ struct TileRes {
     XMFLOAT3 aabbMin, aabbMax;              // в мире
     uint32_t level = 0;                     // LOD-уровень (0=крупный)
 };
-std::vector<TileRes> g_tiles;
 
 // === Quadtree узлы ===
 struct QNode {
@@ -49,8 +51,65 @@ struct QNode {
     int      tileIndex = -1; // индекс в g_tiles если лист
     uint8_t  level = 0;
 };
-std::vector<QNode> g_nodes;
-uint32_t g_root = 0;
+
+
+struct Plane { 
+    XMFLOAT4 p; 
+};
+
+struct SkirtVert { DirectX::XMFLOAT2 uv; float skirtK; };
+
+extern MeshGPU g_terrainSkirt;
+extern BoundingFrustum g_frustumProj;                // фрустум в view-space
+extern std::vector<TileRes> g_tiles;                 // есть у тебя
+extern std::vector<QNode>   g_nodes;                 // есть у тебя
+extern uint32_t             g_root;
+
+void UpdateTilesHeight(float newScale);
 
 void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N, ComPtr<ID3D12Resource>& vbUpOut,
     ComPtr<ID3D12Resource>& ibUpOut);
+
+void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale,
+    D3D12_GPU_DESCRIPTOR_HANDLE heightSrv,
+    D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv);
+
+void ExtractFrustum(Plane out[6], FXMMATRIX VP);
+
+void InitTerrainTiling();
+
+float DistanceToAabbHorizontal(const XMFLOAT3& c, const XMFLOAT3& mn, const XMFLOAT3& mx);
+
+static void GatherLeaves(uint32_t id, std::vector<uint32_t>& out);
+
+void RebuildTerrain(uint32_t gridN, float worldSize, float heightScale,
+    D3D12_GPU_DESCRIPTOR_HANDLE heightSrv,
+    D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv);
+
+void SelectNodes(uint32_t id,
+    const XMFLOAT3& camPos,
+    const BoundingFrustum& frWorld,   // ? вместо XMMATRIX VP
+    float projScale, float thresholdPx,
+    std::vector<uint32_t>& out);
+
+void InitFrustum(const XMMATRIX& P);
+
+bool AabbOutsideFrustumDXC(const BoundingFrustum& frWorld,
+    const XMFLOAT3& mn, const XMFLOAT3& mx);
+
+float ProjScaleFrom(const XMMATRIX& P, float viewportHpx);
+
+void CreateTerrainSkirt(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N, ComPtr<ID3D12Resource>& vbUpOut,
+    ComPtr<ID3D12Resource>& ibUpOut);
+
+static inline void Normalize(Plane& pl) {
+    XMVECTOR v = XMLoadFloat4(&pl.p);
+    v = XMPlaneNormalize(v);
+    XMStoreFloat4(&pl.p, v);
+};
+
+bool AabbOutsideByVP(const DirectX::XMMATRIX& VP,
+    const DirectX::XMFLOAT3& mn,
+    const DirectX::XMFLOAT3& mx);
+
+

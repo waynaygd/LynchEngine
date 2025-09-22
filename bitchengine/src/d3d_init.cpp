@@ -202,7 +202,13 @@ void BuildEditorUI()
 
     if (ImGui::Begin("Terrain"))
     {
-        ImGui::SliderFloat("Height Map", &g_heightMap, 0, 5.f);
+        if (ImGui::SliderFloat("Height", &g_heightMap, 0.0f, 25.0f)) {
+            UpdateTilesHeight(g_heightMap);
+        }
+        ImGui::Checkbox("One Tile Mode", &g_terrainonetile);
+
+        ImGui::Text("Frustum Tiles showed: %d", (int)leaves_count);
+
     }
     ImGui::End();
 }
@@ -590,16 +596,16 @@ void CreateTerrainRSandPSO()
         return; // иначе PSO точно упадёт
     }
 
-    D3D12_INPUT_ELEMENT_DESC il[] = {
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+    D3D12_INPUT_ELEMENT_DESC ilSkirt[] = {
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uv
+        { "TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT,    0, 8,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // skirtK
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
     pso.pRootSignature = g_rsTerrain.Get();
     pso.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
     pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
-    pso.InputLayout = { il, _countof(il) };
+    pso.InputLayout = { ilSkirt, _countof(ilSkirt) };
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     pso.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
 
@@ -814,7 +820,7 @@ void DX_InitCamera(UINT w, UINT h)
     g_scissor = { 0,0,(LONG)w,(LONG)h };
     g_cam.pos = { 0,0,-5 };
     g_cam.yaw = 0.f; g_cam.pitch = 0.f;
-    g_cam.SetLens(XM_PIDIV4, float(w) / float(h), 0.1f, 100.f);
+    g_cam.SetLens(XM_PIDIV4, float(w) / float(h), 0.5f, 3000.0f);
     g_cam.UpdateView();
 }
 
@@ -851,7 +857,8 @@ void DX_LoadTerrain()
     HR(g_uploadAlloc->Reset());
     HR(g_uploadList->Reset(g_uploadAlloc.Get(), nullptr));
 
-    CreateTerrainGrid(g_device.Get(), g_uploadList.Get(), 128, vbUp, ibUp);
+    CreateTerrainGrid(g_device.Get(), g_uploadList.Get(), 64, vbUp, ibUp);
+    CreateTerrainSkirt(g_device.Get(), g_uploadList.Get(), 64, vbUp, ibUp);
 
     HR(g_uploadList->Close());
     ID3D12CommandList* lists1[] = { g_uploadList.Get() };
@@ -867,6 +874,23 @@ void DX_LoadTerrain()
     terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
     terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
 
+    BuildLeafTilesGrid(uiGridN, uiWorldSize, g_heightMap,
+        g_textures[terrain_height].gpu,
+        g_textures[terrain_diffuse].gpu);
+
+    // теперь g_tiles заполнен
+    g_cbTerrainStride = (sizeof(CBTerrainTile) + 255) & ~255u;
+    UINT total = g_cbTerrainStride * g_tiles.size();
+    if (total == 0) total = g_cbTerrainStride; // на всякий случай
+
+    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(total);
+
+    HR(g_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE,
+        &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr, IID_PPV_ARGS(&g_cbTerrainTiles)));
+
+    HR(g_cbTerrainTiles->Map(0, nullptr, (void**)&g_cbTerrainTilesPtr));
 }
 
 

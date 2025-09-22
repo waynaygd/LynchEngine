@@ -79,8 +79,19 @@ int g_uiFilter = 1;   // 0..2 (Point, Linear, Anisotropic)
 int g_uiAniso = 8;   // 1..16 (используется, если Anisotropic)
 
 float g_heightMap = 2;
+bool g_terrainonetile = 0;
 
 float g_uvMul = 1.0f;
+
+int   uiGridN = 8;      // 2..512
+float uiWorldSize = 800.f;  // метры
+int   uiTileVertsN = 75;     // вершины в одном тайле (CreateTerrainGrid)
+int   uiLodPx = 40;
+float g_lodThresholdPx = 120.f;
+
+ComPtr<ID3D12Resource> g_cbTerrainTiles;
+uint8_t* g_cbTerrainTilesPtr = nullptr;
+UINT g_cbTerrainStride = 0;
 
 // GBUFFER
 
@@ -147,3 +158,5 @@ UINT terrain_normal;
 UINT terrain_height;
 
 std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
+
+int leaves_count;

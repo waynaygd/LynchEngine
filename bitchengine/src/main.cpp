@@ -13,6 +13,7 @@ void RenderFrame()
 		g_cbPerObjectPtr + (size_t)g_cbStride * g_cbMaxPerFrame * g_frameIndex;
 
 	UINT drawIdx = 0;
+	leaves_count = 0;
 
 	static LARGE_INTEGER s_freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
 	static LARGE_INTEGER s_prev = [] { LARGE_INTEGER t; QueryPerformanceCounter(&t); return t; }();
@@ -102,38 +103,109 @@ void RenderFrame()
 
 		++drawIdx;
 	}
+	if (!g_terrainonetile) {
+		if (!g_nodes.empty() && g_root < g_nodes.size())
+		{
+			// 1) Фрустум мира
+			InitFrustum(P);
+			BoundingFrustum frWorld;
+			g_frustumProj.Transform(frWorld, XMMatrixInverse(nullptr, V));
 
-	g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
-	g_cmdList->SetPipelineState(g_psoTerrain.Get());
+			// sanity: камера должна быть ВНУТРИ фрустума
+			{
+				XMFLOAT3 cp = g_cam.pos;
+				BoundingBox camBox({ cp.x,cp.y,cp.z }, { 1,1,1 });
+				if (frWorld.Contains(camBox) == DirectX::DISJOINT)
+					OutputDebugStringA("Warn: camera is NOT inside frustum\n");
+			}
 
-	// после смены RS заново подключаем SRV/SAMP кучи
-	{
-		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
-		g_cmdList->SetDescriptorHeaps(2, heaps);
+			const XMMATRIX VP = V * P;
+
+			// 2) Выбор узлов
+			float projScale = ProjScaleFrom(P, g_viewport.Height);
+			std::vector<uint32_t> drawNodes; drawNodes.reserve((UINT)g_nodes.size());
+
+			SelectNodes(g_root, g_cam.pos, frWorld,
+				projScale, (float)g_lodThresholdPx,
+				drawNodes);
+
+			// 3) RS/PSO + heaps
+			g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
+			g_cmdList->SetPipelineState(g_psoTerrain.Get());
+			{
+				ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
+				g_cmdList->SetDescriptorHeaps(2, heaps);
+			}
+
+			// 4) CBScene (НЕ транспонируем для фрустума; в CB — ТРАНСПОНИРУЕМ)
+			CBScene sc{};
+			XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(V * P));
+			XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V));
+			memcpy(g_cbScenePtr, &sc, sizeof(sc));
+			g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());
+
+			UpdateTilesHeight(g_heightMap);
+
+			// 5) Общая сетка на все тайлы
+			g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
+			g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
+
+			// 6) Рисуем выбранные листья
+			for (uint32_t nid : drawNodes)
+			{
+				const QNode& q = g_nodes[nid];
+				const TileRes& tr = g_tiles[q.tileIndex];
+
+				// смещение для этого тайла
+				size_t offset = (size_t)q.tileIndex * g_cbTerrainStride;
+				uint8_t* dst = g_cbTerrainTilesPtr + offset;
+				memcpy(dst, &tr.cb, sizeof(tr.cb));
+
+				g_cmdList->SetGraphicsRootConstantBufferView(
+					0, g_cbTerrainTiles->GetGPUVirtualAddress() + offset);
+
+				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);  // t0
+				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv); // t1
+
+				g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
+				++leaves_count;
+			}
+		}
 	}
+	else {
+		g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
+		g_cmdList->SetPipelineState(g_psoTerrain.Get());
 
-	// b1: CBScene (если VS террейна использует viewProj [+ view])
-	CBScene sc{};
-	XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(V * P));
-	XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V)); // если не нужен — убери эту строку
-	memcpy(g_cbScenePtr, &sc, sizeof(sc));
+		// после смены RS заново подключаем SRV/SAMP кучи
+		{
+			ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
+			g_cmdList->SetDescriptorHeaps(2, heaps);
+		}
 
-	// b0: CBTerrainTile
-	CBTerrainTile cb{};
-	cb.tileOrigin = { 0, 0 };
-	cb.tileSize = 25.0f;
-	cb.heightScale = g_heightMap;          // VS делает y = (h-0.5)*heightScale
-	memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
+		// b1: CBScene (если VS террейна использует viewProj [+ view])
+		CBScene sc{};
+		XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(V * P));
+		XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V)); // если не нужен — убери эту строку
+		memcpy(g_cbScenePtr, &sc, sizeof(sc));
 
-	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); // b0
-	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());   // b1
-	g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);         // t0
-	g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);        // t1
+		// b0: CBTerrainTile
+		CBTerrainTile cb{};
+		cb.tileOrigin = { 0, 0 };
+		cb.tileSize = 25.0f;
+		cb.heightScale = g_heightMap;          // VS делает y = (h-0.5)*heightScale
+		memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
 
-	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
-	g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
-	g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
+		g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); // b0
+		g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());   // b1
+		g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);         // t0
+		g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);        // t1
+
+		g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
+		g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
+		g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
+	}
 
 	// ===== 2) GBuffer -> SRV для LIGHTING =====
 	for (int i = 0; i < GBUF_COUNT; ++i)

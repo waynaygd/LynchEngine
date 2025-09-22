@@ -1,5 +1,7 @@
 #pragma once
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <windowsx.h>
 #include <wrl.h>
@@ -132,7 +134,7 @@ struct Entity {
 };
 extern std::vector<Entity> g_entities;
 
-static UINT g_width = 1280, g_height = 720;
+static UINT g_width = 1600, g_height = 900;
 
 extern ComPtr<ID3D12DescriptorHeap> g_sampHeap;
 extern UINT                         g_sampInc; // шаг
@@ -231,7 +233,19 @@ extern UINT terrain_height;
 extern std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
 
 extern float g_heightMap;
+extern bool g_terrainonetile;
 
+extern int   uiGridN;      // 2..512
+extern float uiWorldSize;  // метры
+extern int   uiTileVertsN;     // вершины в одном тайле (CreateTerrainGrid)
+extern int   uiLodPx;
+extern float g_lodThresholdPx;
+
+extern ComPtr<ID3D12Resource> g_cbTerrainTiles;
+extern uint8_t* g_cbTerrainTilesPtr;
+extern UINT g_cbTerrainStride;
+
+extern int leaves_count;
 // gbuffer
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
