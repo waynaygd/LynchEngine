@@ -2,7 +2,8 @@
 #include <gpu_upload.h>
 #include "someshit.h"
 
-void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N) {
+void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N, ComPtr<ID3D12Resource>& vbUpOut,
+    ComPtr<ID3D12Resource>& ibUpOut) {
     std::vector<XMFLOAT2> verts;
     verts.reserve(N * N);
     for (UINT y = 0; y < N; ++y)
@@ -22,11 +23,15 @@ void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N
     }
 
     // Загрузить в GPU (как у тебя CreateDefaultBuffer в gpu_upload.h)
-    ComPtr<ID3D12Resource> vbUpload, ibUpload;
+    ComPtr<ID3D12Resource> vbUpload = vbUpOut;
+    ComPtr<ID3D12Resource> ibUpload = ibUpOut;
     CreateDefaultBuffer(dev, cmd, verts.data(), sizeof(XMFLOAT2) * verts.size(),
         g_terrainGrid.vb, vbUpload, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     CreateDefaultBuffer(dev, cmd, indices.data(), sizeof(uint16_t) * indices.size(),
         g_terrainGrid.ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+    g_pendingUploads.push_back(vbUpload);
+    g_pendingUploads.push_back(ibUpload);
 
     g_terrainGrid.vbv.BufferLocation = g_terrainGrid.vb->GetGPUVirtualAddress();
     g_terrainGrid.vbv.SizeInBytes = UINT(sizeof(DirectX::XMFLOAT2) * verts.size());

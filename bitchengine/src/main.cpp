@@ -200,15 +200,20 @@ void RenderFrame()
 	memcpy(g_cbScenePtr, &sc, sizeof(sc));
 
 	// Поставь плитку под камерой и побольше
-	CBTerrainTile cb = { {-50,-50}, 200.0f, 50.0f };
+	CBTerrainTile cb;
+	cb.tileOrigin = { 0, 0 };
+	cb.tileSize = 50.f;
+	cb.heightScale = g_heightMap;
 	memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
 
 	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress());
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());
 
+
 	ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 	g_cmdList->SetDescriptorHeaps(2, heaps);
 	g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu); // t0
+	g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);  // t1
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);

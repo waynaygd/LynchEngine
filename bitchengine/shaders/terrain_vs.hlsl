@@ -25,10 +25,11 @@ struct VSOut
 
 VSOut main(VSIn vin)
 {
-    float h = Height.SampleLevel(samp, vin.uv, 0).r; // .r
-    float3 pw = float3(tileOrigin.x + vin.uv.x * tileSize,
-                       h * heightScale,
-                       tileOrigin.y + vin.uv.y * tileSize);
+    float h = Height.SampleLevel(samp, vin.uv, 0).r; // 0..1
+    float y = (h - 0.5f) * heightScale; // теперь ?0.5..+0.5 ? ?S/2..+S/2
+    float3 pw = float3(
+    tileOrigin.x + vin.uv.x * tileSize, y,
+    tileOrigin.y + vin.uv.y * tileSize);
     VSOut o;
     o.posH = mul(float4(pw, 1), gViewProj);
     o.uv = vin.uv;

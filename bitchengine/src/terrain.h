@@ -27,4 +27,5 @@ struct TerrainTile {
     uint8_t* cbPtr = nullptr;
 };
 
-void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N);
+void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N, ComPtr<ID3D12Resource>& vbUpOut,
+    ComPtr<ID3D12Resource>& ibUpOut);

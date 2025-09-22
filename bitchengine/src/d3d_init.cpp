@@ -199,6 +199,12 @@ void BuildEditorUI()
         }
     }
     ImGui::End();
+
+    if (ImGui::Begin("Terrain"))
+    {
+        ImGui::SliderFloat("Height Map", &g_heightMap, 0, 75.f);
+    }
+    ImGui::End();
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -516,12 +522,22 @@ void CreateLightingRSandPSO()
 
 void CreateTerrainRSandPSO()
 {
+    D3D12_DESCRIPTOR_RANGE rHeight{};
+    rHeight.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rHeight.NumDescriptors = 1;
+    rHeight.BaseShaderRegister = 0; // t0
+
+    D3D12_DESCRIPTOR_RANGE rDiffuse{};
+    rDiffuse.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rDiffuse.NumDescriptors = 1;
+    rDiffuse.BaseShaderRegister = 1; // t1
+
     D3D12_DESCRIPTOR_RANGE srvRange{};
     srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    srvRange.NumDescriptors = 1;      // t0
+    srvRange.NumDescriptors = 3;      // t0
     srvRange.BaseShaderRegister = 0;
 
-    D3D12_ROOT_PARAMETER params[3]{};
+    D3D12_ROOT_PARAMETER params[4]{};
 
     // b0: CBTerrainTile (VS)
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -536,8 +552,13 @@ void CreateTerrainRSandPSO()
     // t0: Height (VS читает, но дадим ALL — безопаснее)
     params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     params[2].DescriptorTable.NumDescriptorRanges = 1;
-    params[2].DescriptorTable.pDescriptorRanges = &srvRange;
+    params[2].DescriptorTable.pDescriptorRanges = &rHeight;
     params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[3].DescriptorTable.NumDescriptorRanges = 1;
+    params[3].DescriptorTable.pDescriptorRanges = &rDiffuse;
+    params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_ANISOTROPIC;
@@ -580,10 +601,13 @@ void CreateTerrainRSandPSO()
     pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
     pso.InputLayout = { il, _countof(il) };
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    pso.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    pso.DepthStencilState.DepthEnable = FALSE;
+    pso.DepthStencilState.DepthEnable = TRUE;
+    pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; // или LESS_EQUAL
+
     pso.SampleMask = UINT_MAX;
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pso.NumRenderTargets = 1;
@@ -805,10 +829,6 @@ auto dump = [](UINT id) {
 void DX_LoadAssets()
 {
 
-    //terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
-    //terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
-    //terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");
-
     UINT texError = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
     UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
@@ -818,16 +838,30 @@ void DX_LoadAssets()
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
 
     // СЦЕНА
-    Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
+    //Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
     //Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
     // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
 }
 
 void DX_LoadTerrain()
 {
+    ComPtr<ID3D12Resource> vbUp, ibUp;
 
-    CreateTerrainGrid(g_device.Get(), g_uploadList.Get(), 128);   // <-- ОБЯЗАТЕЛЬНО
+    HR(g_uploadAlloc->Reset());
+    HR(g_uploadList->Reset(g_uploadAlloc.Get(), nullptr));
 
+    CreateTerrainGrid(g_device.Get(), g_uploadList.Get(), 128, vbUp, ibUp);
+
+    HR(g_uploadList->Close());
+    ID3D12CommandList* lists1[] = { g_uploadList.Get() };
+    g_cmdQueue->ExecuteCommandLists(1, lists1);
+    WaitForGPU();
+
+    g_pendingUploads.clear();
+    vbUp.Reset(); 
+    ibUp.Reset(); // теперь можно отпускать
+
+    // 2) Далее — текстуры (функция сама reset/close/execute внутри)
     terrain_diffuse = RegisterTextureFromFile(L"assets\\terrain\\terrain_diffuse.png");
     terrain_normal = RegisterTextureFromFile(L"assets\\terrain\\terrain_normal.png");
     terrain_height = RegisterTextureFromFile(L"assets\\terrain\\terrain_height.png");

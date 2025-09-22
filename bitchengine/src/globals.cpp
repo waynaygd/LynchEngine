@@ -78,6 +78,8 @@ int g_uiAddrMode = 0;   // 0..4 (Wrap, Mirror, Clamp, Border, MirrorOnce)
 int g_uiFilter = 1;   // 0..2 (Point, Linear, Anisotropic)
 int g_uiAniso = 8;   // 1..16 (используется, если Anisotropic)
 
+float g_heightMap = 25;
+
 float g_uvMul = 1.0f;
 
 // GBUFFER
@@ -143,3 +145,5 @@ D3D12_GPU_DESCRIPTOR_HANDLE heightGpu;
 UINT terrain_diffuse;
 UINT terrain_normal;
 UINT terrain_height;
+
+std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;

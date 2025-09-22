@@ -228,6 +228,10 @@ extern UINT terrain_diffuse;
 extern UINT terrain_normal;
 extern UINT terrain_height;
 
+extern std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
+
+extern float g_heightMap;
+
 // gbuffer
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
