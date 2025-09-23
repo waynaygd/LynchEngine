@@ -154,6 +154,8 @@ UINT RegisterTextureFromFile(const std::wstring& path); // возвращает texId
 UINT RegisterOBJ(const std::wstring& path);             // возвращает meshId
 UINT CreateCubeMeshGPU();   // meshId для примитива
 
+extern UINT g_texFallbackId;
+
 // gbuffer
 extern ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;
 extern UINT g_gbufRTVInc;

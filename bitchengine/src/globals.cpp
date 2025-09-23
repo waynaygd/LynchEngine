@@ -94,6 +94,8 @@ ComPtr<ID3D12Resource> g_cbTerrainTiles;
 uint8_t* g_cbTerrainTilesPtr = nullptr;
 UINT g_cbTerrainStride = 0;
 
+UINT g_texFallbackId = 0;
+
 // GBUFFER
 
 ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;

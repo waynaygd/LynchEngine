@@ -99,7 +99,31 @@ void RenderFrame()
 
 		g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
 		g_cmdList->IASetIndexBuffer(&m.ibv);
-		g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
+
+		auto ResolveTexId = [&](const MeshGPU& m, const Submesh& sm, UINT entityFallback)->UINT {
+			UINT tid = UINT(-1);
+
+			if (sm.materialId != UINT(-1) && sm.materialId < m.materialsTexId.size())
+				tid = m.materialsTexId[sm.materialId];
+
+			// 1) если material дал валидный texId — используем его
+			if (tid != UINT(-1) && tid < g_textures.size())
+				return tid;
+
+			// 2) иначе пытаемся фолбэк сущности
+			if (entityFallback != UINT(-1) && entityFallback < g_textures.size())
+				return entityFallback;
+
+			// 3) в крайнем случае — глобальный движковый фолбэк
+			return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
+			};
+
+		for (const Submesh& sm : m.subsets)
+		{
+			const UINT texId = ResolveTexId(m, sm, e.texId);
+			g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
+			g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+		}
 
 		++drawIdx;
 	}

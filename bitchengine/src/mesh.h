@@ -8,9 +8,15 @@ using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
 struct VertexOBJ {
-    float px, py, pz;   // POSITION
-    float nx, ny, nz;   // NORMAL   <-- ÄÎÁÀÂÈËÈ
-    float u, v;         // TEXCOORD
+    float px, py, pz;
+    float nx, ny, nz; 
+    float u, v;     
+};
+
+struct Submesh {
+    UINT indexOffset = 0;
+    UINT indexCount = 0;
+    UINT materialId = UINT(-1); 
 };
 
 struct MeshGPU {
@@ -19,4 +25,7 @@ struct MeshGPU {
     D3D12_INDEX_BUFFER_VIEW  ibv{};
     UINT indexCount = 0;
     DXGI_FORMAT indexFormat = DXGI_FORMAT_R16_UINT;
+
+    std::vector<Submesh> subsets;
+    std::vector<UINT> materialsTexId;
 };

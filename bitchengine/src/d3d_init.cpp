@@ -861,9 +861,11 @@ auto dump = [](UINT id) {
 void DX_LoadAssets()
 {
 
-    UINT texError = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
-    UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
+    UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
+    UINT texError = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
+
+    g_texFallbackId = texError;
 
     // МЕШИ
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
@@ -871,7 +873,7 @@ void DX_LoadAssets()
 
     // СЦЕНА
     //Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-    //Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
+    Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
     // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
 }
 

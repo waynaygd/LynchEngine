@@ -11,6 +11,8 @@ using namespace DirectX;
 
 ScratchImage LoadTextureFile(const std::wstring& filename);
 
+UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* cmd);
+
 inline void ThrowIfFailedEx(HRESULT hr, const wchar_t* where)
 {
     if (FAILED(hr)) {
