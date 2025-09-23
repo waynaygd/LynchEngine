@@ -830,14 +830,22 @@ void DX_LoadAssets()
 
     UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
     UINT texError = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
+
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
+    UINT texBogdan = RegisterTextureFromFile(L"assets\\textures\\bogdanov_diffuse.png");
+    UINT texArsen = RegisterTextureFromFile(L"assets\\textures\\markaryan_diffuse.png");
 
     g_texFallbackId = texError;
 
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
+    UINT meshBodganov = RegisterOBJ(L"assets\\models\\bogdanov.obj");
+    UINT meshMarkaryan = RegisterOBJ(L"assets\\models\\markaryan.obj");
+
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
 
     Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
+    Scene_AddEntity(meshBodganov, texBogdan, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
+    Scene_AddEntity(meshMarkaryan, texArsen, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
     Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
     // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
 }
