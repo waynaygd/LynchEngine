@@ -25,7 +25,6 @@
 #include "lights.h"
 #include "terrain.h"
 
-//externals
 #include <d3dx12.h>
 #include "DirectXTex.h"
 
@@ -58,9 +57,9 @@ extern D3D12_VIEWPORT g_viewport;
 extern D3D12_RECT     g_scissor;
 
 extern ComPtr<ID3D12DescriptorHeap> g_srvHeap;
-extern UINT g_srvInc;                     // increment SRV heap
-extern UINT g_srvNext;    // —ледующий свободный слот
-extern UINT g_srvCapacity; // ¬сего слотов
+extern UINT g_srvInc;         
+extern UINT g_srvNext;   
+extern UINT g_srvCapacity;
 
 extern ComPtr<ID3D12Resource> g_tex;
 
@@ -82,24 +81,22 @@ struct alignas(256) VSConstants {
     float _pad[3];          
 };
 
-extern ComPtr<ID3D12Resource> g_cb;     // upload-ресурс под CB
-extern uint8_t* g_cbPtr; // мапнутый указатель
-extern float                  g_angle;    // дл€ вращени€
+extern ComPtr<ID3D12Resource> g_cb; 
+extern uint8_t* g_cbPtr; 
+extern float                  g_angle;    
 
-//  амера/проекци€ (храним отдельно, чтобы не пересчитывать каждый кадр)
 extern XMFLOAT4X4 g_view, g_proj;
 extern Camera g_cam;
 
 extern XMFLOAT3 g_camPos;
-extern float g_yaw;   // вращение по оси Y
-extern float g_pitch; // вращение по оси X
+extern float g_yaw;   
+extern float g_pitch;
 
-// Ќастройки
 extern bool g_mouseLook;
 extern POINT g_lastMouse;
 extern bool g_mouseHasPrev;
 
-extern bool g_appActive;   // есть ли фокус у нашего окна
+extern bool g_appActive; 
 
 extern ComPtr<ID3D12DescriptorHeap> g_imguiHeap;
 
@@ -111,7 +108,6 @@ extern bool g_dxReady;
 extern UINT g_pendingW;
 extern UINT g_pendingH;
 
-// --- текстуры ---
 struct TextureGPU {
     ComPtr<ID3D12Resource> res;
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -123,12 +119,11 @@ extern std::vector<TextureGPU> g_textures;
 
 extern std::vector<MeshGPU> g_meshes;
 
-// --- сущности сцены ---
 struct Entity {
     UINT meshId = 0;
     UINT texId = 0;
     DirectX::XMFLOAT3 pos{ 0,0,0 };
-    DirectX::XMFLOAT3 rotDeg{ 0,0,0 }; // pitch,yaw,roll в градусах
+    DirectX::XMFLOAT3 rotDeg{ 0,0,0 }; 
     DirectX::XMFLOAT3 scale{ 1,1,1 };
     float uvMul = 1.0f;
 };
@@ -137,26 +132,23 @@ extern std::vector<Entity> g_entities;
 static UINT g_width = 1600, g_height = 900;
 
 extern ComPtr<ID3D12DescriptorHeap> g_sampHeap;
-extern UINT                         g_sampInc; // шаг
+extern UINT                         g_sampInc; 
 
-// ¬ыбор пользовател€ (дл€ UI)
-extern int g_uiAddrMode;   // 0..4 (Wrap, Mirror, Clamp, Border, MirrorOnce)
-extern int g_uiFilter;   // 0..2 (Point, Linear, Anisotropic)
-extern int g_uiAniso;   // 1..16 (используетс€, если Anisotropic)
+extern int g_uiAddrMode; 
+extern int g_uiFilter;  
+extern int g_uiAniso; 
 
 enum : int { ADDR_WRAP = 0, ADDR_MIRROR, ADDR_CLAMP, ADDR_BORDER, ADDR_MIRROR_ONCE, ADDR_COUNT = 5 };
 enum : int { FILT_POINT = 0, FILT_LINEAR, FILT_ANISO, FILT_COUNT = 3 };
 
 extern float g_uvMul;
 
-// регистраторы
-UINT RegisterTextureFromFile(const std::wstring& path); // возвращает texId
-UINT RegisterOBJ(const std::wstring& path);             // возвращает meshId
-UINT CreateCubeMeshGPU();   // meshId дл€ примитива
+UINT RegisterTextureFromFile(const std::wstring& path); 
+UINT RegisterOBJ(const std::wstring& path);             
+UINT CreateCubeMeshGPU(); 
 
 extern UINT g_texFallbackId;
 
-// gbuffer
 extern ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;
 extern UINT g_gbufRTVInc;
 
@@ -164,7 +156,6 @@ extern ComPtr<ID3D12Resource> g_gbufAlbedo;
 extern ComPtr<ID3D12Resource> g_gbufNormal;
 extern ComPtr<ID3D12Resource> g_gbufPosition;
 
-// SRV индексы в общей g_srvHeap (дл€ lighting pass/отладки)
 extern UINT g_gbufAlbedoSRV;
 extern UINT g_gbufNormalSRV;
 extern UINT g_gbufPositionSRV;
@@ -176,7 +167,6 @@ extern ComPtr<ID3D12PipelineState> g_psoGBuffer;
 extern ComPtr<ID3D12RootSignature> g_rsLighting;
 extern ComPtr<ID3D12PipelineState> g_psoLighting;
 
-// CBs
 struct CBPerObject {
     DirectX::XMFLOAT4X4 M;
     DirectX::XMFLOAT4X4 V;
@@ -188,14 +178,14 @@ struct CBPerObject {
 
 extern ComPtr<ID3D12Resource> g_cbPerObject;
 extern uint8_t* g_cbPerObjectPtr;
-extern UINT                   g_cbStride;        // выровненный шаг (>= sizeof(CBPerObject), кратен 256)
-extern UINT                   g_cbMaxPerFrame;   // макс. объектов на кадр
+extern UINT                   g_cbStride;      
+extern UINT                   g_cbMaxPerFrame; 
 
 
 extern ComPtr<ID3D12Resource> g_cbLighting;
 extern uint8_t* g_cbLightingPtr;
 
-extern int g_gbufDebugMode; // 0=Lighting, 1=Albedo, 2=Normal, 3=Position
+extern int g_gbufDebugMode; 
 
 enum { 
     GBUF_ALBEDO = 0, 
@@ -208,7 +198,6 @@ extern ComPtr<ID3D12Resource> g_gbuf[GBUF_COUNT];
 extern D3D12_CPU_DESCRIPTOR_HANDLE g_gbufRTV[GBUF_COUNT];
 extern D3D12_GPU_DESCRIPTOR_HANDLE g_gbufSRV[GBUF_COUNT];
 
-// “екущее состо€ние каждой текстуры
 extern D3D12_RESOURCE_STATES g_gbufState[GBUF_COUNT];
 
 extern D3D12_RESOURCE_STATES depthState;
@@ -223,7 +212,7 @@ extern uint8_t* g_cbTerrainPtr;
 
 extern MeshGPU g_terrainGrid;
 
-extern ComPtr<ID3D12Resource> g_cbScene;  // upload
+extern ComPtr<ID3D12Resource> g_cbScene; 
 extern uint8_t* g_cbScenePtr;
 
 extern UINT heightSrvIndex;
@@ -238,9 +227,9 @@ extern std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
 extern float g_heightMap;
 extern bool g_terrainonetile;
 
-extern int   uiGridN;      // 2..512
-extern float uiWorldSize;  // метры
-extern int   uiTileVertsN;     // вершины в одном тайле (CreateTerrainGrid)
+extern int   uiGridN;  
+extern float uiWorldSize;
+extern int   uiTileVertsN;    
 extern int   uiLodPx;
 extern float g_lodThresholdPx;
 extern float g_uiSkirtDepth;
@@ -250,7 +239,6 @@ extern uint8_t* g_cbTerrainTilesPtr;
 extern UINT g_cbTerrainStride;
 
 extern int leaves_count;
-// gbuffer
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();

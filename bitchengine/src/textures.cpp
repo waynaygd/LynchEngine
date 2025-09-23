@@ -15,7 +15,6 @@ static void DebugFormat(const TexMetadata& m, const std::wstring& file) {
 
 ScratchImage LoadTextureFile(const std::wstring& filename)
 {
-    // 0) файл существует?
     if (GetFileAttributesW(filename.c_str()) == INVALID_FILE_ATTRIBUTES) {
         wchar_t cwd[MAX_PATH]; GetCurrentDirectoryW(MAX_PATH, cwd);
         std::wstringstream wss;
@@ -26,7 +25,6 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
 
     ScratchImage out;
 
-    // DDS — грузим напрямую
     if (filename.size() >= 4 &&
         _wcsicmp(filename.c_str() + filename.size() - 4, L".dds") == 0)
     {
@@ -42,7 +40,6 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
         return out;
     }
 
-    // 1) WIC: PNG/JPG/BMP/.. без принудительных флагов
     ScratchImage wic;
     ThrowIfFailedEx(LoadFromWICFile(filename.c_str(), WIC_FLAGS_NONE, nullptr, wic),
         L"LoadFromWICFile");
@@ -50,7 +47,6 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
     const TexMetadata meta = wic.GetMetadata();
     DebugFormat(meta, filename);
 
-    // 2) Если уже 32‑бит — оставляем как есть
     switch (meta.format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM:
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
@@ -64,7 +60,6 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
         break;
     }
 
-    // 3) Пытаемся конвертировать в RGBA8, если не вышло — в BGRA8
     HRESULT hr = Convert(wic.GetImages(), wic.GetImageCount(), meta,
         DXGI_FORMAT_R8G8B8A8_UNORM,
         TEX_FILTER_DEFAULT, 0.5f, out);
@@ -93,7 +88,6 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
         }
     }
 
-    // DEFAULT ресурс под все мипы
     ComPtr<ID3D12Resource> tex;
     {
         auto desc = CD3DX12_RESOURCE_DESC::Tex2D(
@@ -104,7 +98,6 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
             D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&tex)));
     }
 
-    // Upload-буфер под все субресурсы
     ComPtr<ID3D12Resource> up;
     {
         UINT numSubs = (UINT)img.GetImageCount();
@@ -115,7 +108,6 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&up)));
     }
 
-    // Переходы + UpdateSubresources на УЖЕ открытом cmd
     auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
         tex.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
     cmd->ResourceBarrier(1, &toCopy);
@@ -129,7 +121,6 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
         tex.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->ResourceBarrier(1, &toSRV);
 
-    // SRV (важно: sRGB для альбедо-текстур)
     auto ToSRGB = [](DXGI_FORMAT f) {
         switch (f) {
         case DXGI_FORMAT_R8G8B8A8_UNORM: return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -138,10 +129,10 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
         }
         };
 
-    UINT slot = SRV_Alloc();  // использует твою общую SRV-кучу :contentReference[oaicite:1]{index=1}
+    UINT slot = SRV_Alloc(); 
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-    srv.Format = ToSRGB(meta.format); // ← ключевая строка
+    srv.Format = ToSRGB(meta.format);
     srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srv.Texture2D.MipLevels = (UINT)meta.mipLevels;
@@ -151,7 +142,6 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
     t.res = tex; t.cpu = SRV_CPU(slot); t.gpu = SRV_GPU(slot);
     g_textures.push_back(t);
 
-    // держим upload-ресурс живым до выполнения GPU
     g_uploadKeepAlive.push_back(up);
 
     return (UINT)g_textures.size() - 1;
@@ -170,7 +160,6 @@ static D3D12_GPU_DESCRIPTOR_HANDLE SRV_GPU(UINT index) {
 
 UINT RegisterTextureFromFile(const std::wstring& path)
 {
-    // ВНИМАНИЕ: этот путь сам Reset/Close/Execute, вызывать только ВНЕ DX_BeginUpload!
     HR(g_uploadAlloc->Reset());
     HR(g_uploadList->Reset(g_uploadAlloc.Get(), nullptr));
 
@@ -179,7 +168,7 @@ UINT RegisterTextureFromFile(const std::wstring& path)
     HR(g_uploadList->Close());
     ID3D12CommandList* lists[] = { g_uploadList.Get() };
     g_cmdQueue->ExecuteCommandLists(1, lists);
-    WaitForGPU(); // безопасно и просто
+    WaitForGPU();
 
     return id;
 }

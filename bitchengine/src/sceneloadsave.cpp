@@ -1,7 +1,6 @@
 #include "sceneloadsave.h"
 #include "someshit.h"
 
-// --- сохранение ---
 bool SaveScene(const std::wstring& path)
 {
     std::ofstream ofs(path, std::ios::binary);
@@ -23,7 +22,6 @@ bool SaveScene(const std::wstring& path)
     return true;
 }
 
-// --- разбор пары "key=value" ---
 static bool ParseKV(const std::string& token, std::string& key, std::string& val)
 {
     auto eq = token.find('=');
@@ -45,14 +43,12 @@ static bool ParseFloat3(const std::string& s, DirectX::XMFLOAT3& out)
     return true;
 }
 
-// --- загрузка ---
 bool LoadScene(const std::wstring& path)
 {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) return false;
 
     std::string line;
-    // очистим текущую сцену
     g_entities.clear();
 
     int lineNo = 0;
@@ -64,13 +60,12 @@ bool LoadScene(const std::wstring& path)
         std::stringstream ss(line);
         std::string word;
         ss >> word;
-        if (word != "entity") continue; // игнор других строк
+        if (word != "entity") continue; 
 
         Entity e{};
         e.meshId = 0; e.texId = 0;
         e.pos = { 0,0,0 }; e.rotDeg = { 0,0,0 }; e.scale = { 1,1,1 };
 
-        // собираем оставшиеся токены
         std::vector<std::string> tokens;
         while (ss >> word) tokens.push_back(word);
 
@@ -96,7 +91,6 @@ bool LoadScene(const std::wstring& path)
             }
         }
 
-        // валидация: пропускаем, если нет таких ресурсов
         if (e.meshId >= g_meshes.size()) {
             OutputDebugStringA(("LoadScene: skip entity, mesh out of range at line " + std::to_string(lineNo) + "\n").c_str());
             continue;

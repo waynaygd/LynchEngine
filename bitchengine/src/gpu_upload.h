@@ -19,32 +19,26 @@ inline void CreateDefaultBuffer(
 {
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
 
-    // DEFAULT Ч из COMMON
     CD3DX12_HEAP_PROPERTIES heapDefault(D3D12_HEAP_TYPE_DEFAULT);
     HR(device->CreateCommittedResource(
         &heapDefault, D3D12_HEAP_FLAG_NONE,
         &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(defaultBuf.ReleaseAndGetAddressOf())));
 
-    // UPLOAD
     CD3DX12_HEAP_PROPERTIES heapUpload(D3D12_HEAP_TYPE_UPLOAD);
     HR(device->CreateCommittedResource(
         &heapUpload, D3D12_HEAP_FLAG_NONE,
         &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(uploadBuf.ReleaseAndGetAddressOf())));
 
-    // map & memcpy
     void* mapped = nullptr; CD3DX12_RANGE noRead(0, 0);
     HR(uploadBuf->Map(0, &noRead, &mapped));
     std::memcpy(mapped, data, bytes);
     uploadBuf->Unmap(0, nullptr);
 
-    // COMMON -> COPY_DEST
     auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuf.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
     cmd->ResourceBarrier(1, &toCopy);
 
-    // copy
     cmd->CopyBufferRegion(defaultBuf.Get(), 0, uploadBuf.Get(), 0, bytes);
 
-    // COPY_DEST -> final
     auto toFinal = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuf.Get(), D3D12_RESOURCE_STATE_COPY_DEST, finalState);
     cmd->ResourceBarrier(1, &toFinal);
 }

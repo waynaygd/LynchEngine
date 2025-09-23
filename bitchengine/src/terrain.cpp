@@ -14,8 +14,7 @@ void CreateTerrainGrid(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT N
     verts.reserve(N * N);
     for (UINT y = 0; y < N; ++y)
         for (UINT x = 0; x < N; ++x)
-            verts.push_back({ float(x) / (N - 1), float(y) / (N - 1) }); // uv-координаты
-
+            verts.push_back({ float(x) / (N - 1), float(y) / (N - 1) });
     std::vector<uint16_t> indices;
     indices.reserve((N - 1) * (N - 1) * 6);
     for (UINT y = 0; y < N - 1; ++y) {
@@ -57,11 +56,11 @@ void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, floa
     g_tiles.clear(); g_nodes.clear();
 
     const float leaf = worldSize / gridN;
-    const float start = -0.5f * worldSize;   // центрируем вокруг (0,0)
+    const float start = -0.5f * worldSize;   
     const float hminY = -heightScale * 0.5f;
     const float hmaxY = heightScale * 0.5f;
 
-    // листья
+  
     for (uint32_t y = 0; y < gridN; ++y)
         for (uint32_t x = 0; x < gridN; ++x) {
             TileRes tr{};
@@ -69,14 +68,13 @@ void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, floa
             tr.cb.tileSize = leaf;
             tr.cb.heightScale = heightScale;
             tr.cb.skirtDepth = skirtDepth;
-            tr.heightSrv = heightSrv;      // t0
-            tr.diffuseSrv = diffuseSrv;     // t1
+            tr.heightSrv = heightSrv;      
+            tr.diffuseSrv = diffuseSrv;     
             tr.aabbMin = { tr.cb.tileOrigin.x,          hminY, tr.cb.tileOrigin.y };
             tr.aabbMax = { tr.cb.tileOrigin.x + leaf,    hmaxY, tr.cb.tileOrigin.y + leaf };
             g_tiles.push_back(tr);
         }
 
-    // дерево
     std::function<uint32_t(XMFLOAT2, float, uint8_t)> build =
         [&](XMFLOAT2 org, float size, uint8_t L)->uint32_t {
         QNode n{}; n.origin = org; n.size = size; n.level = L;
@@ -105,8 +103,8 @@ void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, floa
 
 void InitTerrainTiling()
 {
-    const uint32_t N = 8;              // начни с 8?8
-    const float    W = 800.0f;         // размер мира
+    const uint32_t N = 8;         
+    const float    W = 800.0f;     
     BuildLeafTilesGrid(N, W, g_heightMap, g_uiSkirtDepth,
         g_textures[terrain_height].gpu,
         g_textures[terrain_diffuse].gpu);
@@ -191,7 +189,7 @@ bool AabbOutsideFrustumDXC(const BoundingFrustum& frWorld, const XMFLOAT3& mn, c
     XMFLOAT3 c{ (mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f, (mn.z + mx.z) * 0.5f };
     XMFLOAT3 e{ (mx.x - mn.x) * 0.5f, (mx.y - mn.y) * 0.5f, (mx.z - mn.z) * 0.5f };
     BoundingBox box(c, e);
-    return !frWorld.Intersects(box); // true = вне фрустума
+    return !frWorld.Intersects(box);
 }
 
 float ProjScaleFrom(const XMMATRIX& P, float viewportHpx)
@@ -208,37 +206,29 @@ void CreateTerrainSkirt(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT 
     std::vector<uint16_t>  idx; idx.reserve(4 * (N - 1) * 6);
 
     auto append_edge = [&](auto getUVRow) {
-        // два ряда: верхний (k=0) и нижний (k=1)
         UINT base = (UINT)v.size();
         for (UINT i = 0; i < N; i++) {
             XMFLOAT2 uv = getUVRow(i);
-            v.push_back({ uv, 0.0f }); // верх
+            v.push_back({ uv, 0.0f });
         }
         for (UINT i = 0; i < N; i++) {
             XMFLOAT2 uv = getUVRow(i);
-            v.push_back({ uv, 1.0f }); // низ (опускаем в VS)
+            v.push_back({ uv, 1.0f });
         }
-        // индексы
         for (UINT i = 0; i < N - 1; i++) {
             uint16_t i0 = uint16_t(base + i);
             uint16_t i1 = uint16_t(base + i + 1);
             uint16_t j0 = uint16_t(base + i + N);
             uint16_t j1 = uint16_t(base + i + 1 + N);
-            // два треугольника
             idx.insert(idx.end(), { i0,j0,i1,  i1,j0,j1 });
         }
         };
 
-    // низ (y=0, x:0..1)
     append_edge([&](UINT i) { return XMFLOAT2(float(i) / (N - 1), 0.0f); });
-    // верх (y=1)
     append_edge([&](UINT i) { return XMFLOAT2(float(i) / (N - 1), 1.0f); });
-    // левый (x=0, y:0..1)
     append_edge([&](UINT i) { return XMFLOAT2(0.0f, float(i) / (N - 1)); });
-    // правый (x=1)
     append_edge([&](UINT i) { return XMFLOAT2(1.0f, float(i) / (N - 1)); });
 
-    // аплоад (как у тебя CreateDefaultBuffer)
     ComPtr<ID3D12Resource> vbUp = vbUpOut;
     ComPtr<ID3D12Resource> ibUp = ibUpOut;
     CreateDefaultBuffer(dev, cmd, v.data(), sizeof(SkirtVert) * v.size(),
@@ -258,14 +248,11 @@ void CreateTerrainSkirt(ID3D12Device* dev, ID3D12GraphicsCommandList* cmd, UINT 
 
 bool AabbOutsideByVP(const DirectX::XMMATRIX& VP, const DirectX::XMFLOAT3& mn, const DirectX::XMFLOAT3& mx)
 {
-    // 8 углов AABB в world
     XMFLOAT3 c[8] = {
         {mn.x,mn.y,mn.z},{mx.x,mn.y,mn.z},{mn.x,mx.y,mn.z},{mx.x,mx.y,mn.z},
         {mn.x,mn.y,mx.z},{mx.x,mn.y,mx.z},{mn.x,mx.y,mx.z},{mx.x,mx.y,mx.z},
     };
 
-    // Для каждого из 6 отсекателей в клип-пространстве
-    // D3D: видимая область  -w<=x<=w, -w<=y<=w, 0<=z<=w
     bool allLeft = true, allRight = true, allBottom = true, allTop = true, allNear = true, allFar = true;
 
     for (int i = 0; i < 8; ++i)
@@ -277,16 +264,13 @@ bool AabbOutsideByVP(const DirectX::XMMATRIX& VP, const DirectX::XMFLOAT3& mn, c
         float z = XMVectorGetZ(clip);
         float w = XMVectorGetW(clip);
 
-        // если точка проходит плоскость, снимаем флаг "вся грань снаружи"
         if (x >= -w) allLeft = false;
         if (x <= w) allRight = false;
         if (y >= -w) allBottom = false;
         if (y <= w) allTop = false;
-        if (z >= 0) allNear = false;   // D3D: near = 0
-        if (z <= w) allFar = false;   // D3D: far  = w
+        if (z >= 0) allNear = false; 
+        if (z <= w) allFar = false;  
     }
-
-    // если по какой-то плоскости все 8 углов не прошли — AABB вне фрустума
     return (allLeft || allRight || allBottom || allTop || allNear || allFar);
 }
 

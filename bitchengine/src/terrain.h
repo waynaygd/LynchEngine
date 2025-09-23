@@ -16,40 +16,35 @@ struct CBScene {
 };
 static_assert(sizeof(CBScene) % 16 == 0);
 
-// при инициализации (аналогично твоим CB)
-
-// Константы на тайл (cbuffer b0)
 struct CBTerrainTile {
-    XMFLOAT2 tileOrigin;   // world-координаты начала тайла (x,z)
-    float    tileSize;     // длина тайла в метрах
-    float    heightScale;  // во сколько умножать значение из heightmap          
+    XMFLOAT2 tileOrigin;   
+    float    tileSize; 
+    float    heightScale;        
     float    skirtDepth;
 };
 static_assert(sizeof(CBTerrainTile) % 20 == 0, "CB must be 20-byte aligned");
 
-// CPU-структура тайла
+
 struct TerrainTile {
     CBTerrainTile cb;
-    ComPtr<ID3D12Resource> cbRes;  // upload CB
+    ComPtr<ID3D12Resource> cbRes;  
     uint8_t* cbPtr = nullptr;
 };
 
-// === Tile resources (листовые тайлы) ===
 struct TileRes {
-    CBTerrainTile cb;                       // b0: origin/size/heightScale
-    D3D12_GPU_DESCRIPTOR_HANDLE heightSrv;  // t0
-    D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv; // t1
-    XMFLOAT3 aabbMin, aabbMax;              // в мире
-    uint32_t level = 0;                     // LOD-уровень (0=крупный)
+    CBTerrainTile cb;                      
+    D3D12_GPU_DESCRIPTOR_HANDLE heightSrv; 
+    D3D12_GPU_DESCRIPTOR_HANDLE diffuseSrv; 
+    XMFLOAT3 aabbMin, aabbMax;          
+    uint32_t level = 0;                   
 };
 
-// === Quadtree узлы ===
 struct QNode {
     uint32_t child[4]{ UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX };
-    XMFLOAT2 origin;  // (x,z) мира
-    float    size;    // длина стороны
+    XMFLOAT2 origin;
+    float    size;    
     XMFLOAT3 aabbMin, aabbMax;
-    int      tileIndex = -1; // индекс в g_tiles если лист
+    int      tileIndex = -1; 
     uint8_t  level = 0;
 };
 
@@ -61,9 +56,9 @@ struct Plane {
 struct SkirtVert { DirectX::XMFLOAT2 uv; float skirtK; };
 
 extern MeshGPU g_terrainSkirt;
-extern BoundingFrustum g_frustumProj;                // фрустум в view-space
-extern std::vector<TileRes> g_tiles;                 // есть у тебя
-extern std::vector<QNode>   g_nodes;                 // есть у тебя
+extern BoundingFrustum g_frustumProj;           
+extern std::vector<TileRes> g_tiles;        
+extern std::vector<QNode>   g_nodes;        
 extern uint32_t             g_root;
 
 void UpdateTilesHeight(float newScale);
@@ -89,7 +84,7 @@ void RebuildTerrain(uint32_t gridN, float worldSize, float heightScale,
 
 void SelectNodes(uint32_t id,
     const XMFLOAT3& camPos,
-    const BoundingFrustum& frWorld,   // ? вместо XMMATRIX VP
+    const BoundingFrustum& frWorld,  
     float projScale, float thresholdPx,
     std::vector<uint32_t>& out);
 

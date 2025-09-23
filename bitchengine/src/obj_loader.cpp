@@ -1,6 +1,6 @@
 ﻿// obj_loader.cpp
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"   // только здесь!
+#include "tiny_obj_loader.h"  
 #include <unordered_map>
 #include <filesystem>
 
@@ -22,9 +22,8 @@ bool LoadOBJToGPU(const std::wstring& pathW,
 {
     using namespace DirectX;
 
-    // ── 0) tinyobj: читаем + триангулируем
     tinyobj::ObjReaderConfig cfg;
-    cfg.mtl_search_path = "";    // пути к текстурам возьмём относительно OBJ
+    cfg.mtl_search_path = "";  
     cfg.triangulate = true;
 
     tinyobj::ObjReader reader;
@@ -40,7 +39,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
     const auto& shapes = reader.GetShapes();
     const auto& materials = reader.GetMaterials();
 
-    // ── 1) Загрузка текстур материалов (diffuse) и подготовка таблицы materialsTexId
     out.materialsTexId.clear();
     out.materialsTexId.resize(std::max<size_t>(1, materials.size()), UINT(-1));
 
@@ -56,13 +54,11 @@ bool LoadOBJToGPU(const std::wstring& pathW,
                 out.materialsTexId[mi] = RegisterTexture_OnCmd(texAbs.wstring(), uploadCmd);
             }
             catch (...) {
-                // если текстура не загрузилась — оставим -1, отрисуем фолбэком
                 OutputDebugStringA(("Failed to load material texture: " + m.diffuse_texname + "\n").c_str());
             }
         }
     }
 
-    // ── 2) Уникальные вершины по ключу (v,vt,vn) и функция добавления
     std::vector<VertexOBJ> vertices;
     vertices.reserve(1 << 16);
 
@@ -85,12 +81,10 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         if (auto it = remap.find(k); it != remap.end()) return it->second;
 
         VertexOBJ v{};
-        // pos
         v.px = attrib.vertices[3 * idx.vertex_index + 0];
         v.py = attrib.vertices[3 * idx.vertex_index + 1];
         v.pz = attrib.vertices[3 * idx.vertex_index + 2];
 
-        // nrm (если нет — временно 0, сгенерим позже)
         if (idx.normal_index >= 0 && !attrib.normals.empty()) {
             v.nx = attrib.normals[3 * idx.normal_index + 0];
             v.ny = attrib.normals[3 * idx.normal_index + 1];
@@ -115,42 +109,36 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         return newIdx;
         };
 
-    // ── 3) Группируем индексы по material_id → временные «корзины»
-    // + один блок "no material" (matId = -1)
-    std::vector<std::vector<uint32_t>> matIB(materials.size() + 1); // последний — для mat=-1
+    std::vector<std::vector<uint32_t>> matIB(materials.size() + 1);
     auto& noMatIB = matIB.back();
 
-    // Также держим общий список индексов для генерации нормалей
     std::vector<uint32_t> indicesAll; indicesAll.reserve(1 << 20);
 
     for (const auto& shape : shapes)
     {
-        const auto& ids = shape.mesh.material_ids;           // по одному на треугольник
-        const auto& fv = shape.mesh.num_face_vertices;      // при triangulate все = 3
+        const auto& ids = shape.mesh.material_ids;        
+        const auto& fv = shape.mesh.num_face_vertices;    
         const auto& idx = shape.mesh.indices;
 
-        size_t triBase = 0; // смещение по индексам вершин (идут тройками)
+        size_t triBase = 0;
         for (size_t f = 0; f < fv.size(); ++f)
         {
-            int faceVerts = fv[f]; // ожидаем 3
+            int faceVerts = fv[f];
             int mat = ids.empty() ? -1 : ids[f];
 
             uint32_t i0 = addVertex(idx[triBase + 0]);
             uint32_t i1 = addVertex(idx[triBase + 1]);
             uint32_t i2 = addVertex(idx[triBase + 2]);
 
-            // в корзину материала
             auto& dst = (mat >= 0 && (size_t)mat < materials.size()) ? matIB[(size_t)mat] : noMatIB;
             dst.push_back(i0); dst.push_back(i1); dst.push_back(i2);
 
-            // и в общий список — для генерации нормалей
             indicesAll.push_back(i0); indicesAll.push_back(i1); indicesAll.push_back(i2);
 
             triBase += faceVerts;
         }
     }
 
-    // ── 4) Если нормали отсутствовали — генерим усреднённые пер-вершинно
     auto len2 = [](float x, float y, float z) { return x * x + y * y + z * z; };
     bool needGen = false;
     for (auto& v : vertices) if (len2(v.nx, v.ny, v.nz) < 1e-12f) { needGen = true; break; }
@@ -174,7 +162,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         }
     }
 
-    // ── 5) Склеиваем корзины материалов в один IB + собираем Submesh’и
     out.subsets.clear();
     std::vector<uint32_t> indices32; indices32.reserve(indicesAll.size());
 
@@ -188,11 +175,9 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         out.subsets.push_back(sm);
         };
 
-    // Порядок: все материалы по порядку, затем «без материала» (если есть)
     for (size_t m = 0; m < materials.size(); ++m) appendBlock(matIB[m], (int)m);
     appendBlock(noMatIB, -1);
 
-    // ── 6) Выбираем формат индексов и готовим CPU-буферы
     bool use32 = (vertices.size() > 65535);
     out.indexFormat = use32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 
@@ -202,7 +187,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         for (size_t i = 0; i < indices32.size(); ++i) indices16[i] = (uint16_t)indices32[i];
     }
 
-    // ── 7) Копируем на GPU (твоя CreateDefaultBuffer)
     ComPtr<ID3D12Resource> vbUpload, ibUpload;
     CreateDefaultBuffer(device, uploadCmd,
         vertices.data(), (UINT)(vertices.size() * sizeof(VertexOBJ)),
@@ -222,7 +206,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
     g_uploadKeepAlive.push_back(vbUpload);
     g_uploadKeepAlive.push_back(ibUpload);
 
-    // ── 8) Views
     out.vbv.BufferLocation = out.vb->GetGPUVirtualAddress();
     out.vbv.StrideInBytes = sizeof(VertexOBJ);
     out.vbv.SizeInBytes = (UINT)(vertices.size() * sizeof(VertexOBJ));
@@ -250,52 +233,50 @@ UINT RegisterOBJ(const std::wstring& path)
 
     UINT id = (UINT)g_meshes.size();
     g_meshes.push_back(std::move(m));
-    return id; // meshId
+    return id;
 }
 
 struct CubeVertex {
     DirectX::XMFLOAT3 pos;
-    DirectX::XMFLOAT3 nrm; // было col
+    DirectX::XMFLOAT3 nrm; 
     DirectX::XMFLOAT2 uv;
 };
 
 UINT CreateCubeMeshGPU()
 {
-    // 24 уникальные вершины (по 4 на грань) с UV
     static const CubeVertex v[] = {
-        // +Z
+    
         {{-1,-1, 1},{0,0, 1},{0,1}}, {{ 1,-1, 1},{0,0, 1},{1,1}},
         {{ 1, 1, 1},{0,0, 1},{1,0}}, {{-1, 1, 1},{0,0, 1},{0,0}},
-        // -Z
+    
         {{ 1,-1,-1},{0,0,-1},{0,1}}, {{-1,-1,-1},{0,0,-1},{1,1}},
         {{-1, 1,-1},{0,0,-1},{1,0}}, {{ 1, 1,-1},{0,0,-1},{0,0}},
-        // +X
+  
         {{ 1,-1, 1},{1,0,0},{0,1}}, {{ 1,-1,-1},{1,0,0},{1,1}},
         {{ 1, 1,-1},{1,0,0},{1,0}}, {{ 1, 1, 1},{1,0,0},{0,0}},
-        // -X
+   
         {{-1,-1,-1},{-1,0,0},{0,1}}, {{-1,-1, 1},{-1,0,0},{1,1}},
         {{-1, 1, 1},{-1,0,0},{1,0}}, {{-1, 1,-1},{-1,0,0},{0,0}},
-        // +Y
+      
         {{-1, 1, 1},{0,1,0},{0,1}}, {{ 1, 1, 1},{0,1,0},{1,1}},
         {{ 1, 1,-1},{0,1,0},{1,0}}, {{-1, 1,-1},{0,1,0},{0,0}},
-        // -Y
+   
         {{-1,-1,-1},{0,-1,0},{0,1}}, {{ 1,-1,-1},{0,-1,0},{1,1}},
         {{ 1,-1, 1},{0,-1,0},{1,0}}, {{-1,-1, 1},{0,-1,0},{0,0}},
     };
 
     static const uint16_t idx[] = {
-        0,1,2, 0,2,3,     // front
-        4,5,6, 4,6,7,     // back
-        8,9,10, 8,10,11,  // right
-        12,13,14, 12,14,15,// left
-        16,17,18, 16,18,19,// top
-        20,21,22, 20,22,23 // bottom
+        0,1,2, 0,2,3,     
+        4,5,6, 4,6,7,    
+        8,9,10, 8,10,11,  
+        12,13,14, 12,14,15,
+        16,17,18, 16,18,19,
+        20,21,22, 20,22,23 
     };
 
     const UINT vbBytes = (UINT)sizeof(v);
     const UINT ibBytes = (UINT)sizeof(idx);
 
-    // --- создаём DEFAULT+UPLOAD для VB/IB и копируем данные ---
     Microsoft::WRL::ComPtr<ID3D12Resource> vb, ib, vbUpload, ibUpload;
 
     auto CreateDefaultAndUpload = [&](const void* src, UINT bytes,
@@ -303,25 +284,22 @@ UINT CreateCubeMeshGPU()
         Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuf,
         D3D12_RESOURCE_STATES finalState)
         {
-            // DEFAULT (старт из COMMON)
             CD3DX12_HEAP_PROPERTIES hpDef(D3D12_HEAP_TYPE_DEFAULT);
             auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
             HR(g_device->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_COMMON, nullptr,
                 IID_PPV_ARGS(defaultBuf.ReleaseAndGetAddressOf())));
-            // UPLOAD
+
             CD3DX12_HEAP_PROPERTIES hpUp(D3D12_HEAP_TYPE_UPLOAD);
             HR(g_device->CreateCommittedResource(&hpUp, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                 IID_PPV_ARGS(uploadBuf.ReleaseAndGetAddressOf())));
 
-            // map+copy
             void* mapped = nullptr; CD3DX12_RANGE noRead(0, 0);
             HR(uploadBuf->Map(0, &noRead, &mapped));
             std::memcpy(mapped, src, bytes);
             uploadBuf->Unmap(0, nullptr);
 
-            // записываем команды копирования в upload‑список
             HR(g_uploadAlloc->Reset());
             HR(g_uploadList->Reset(g_uploadAlloc.Get(), nullptr));
 
@@ -338,13 +316,12 @@ UINT CreateCubeMeshGPU()
             HR(g_uploadList->Close());
             ID3D12CommandList* lists[] = { g_uploadList.Get() };
             g_cmdQueue->ExecuteCommandLists(1, lists);
-            WaitForGPU(); // просто и надёжно
+            WaitForGPU(); 
         };
 
     CreateDefaultAndUpload(v, vbBytes, vb, vbUpload, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     CreateDefaultAndUpload(idx, ibBytes, ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
-    // --- заполняем MeshGPU ---
     MeshGPU mesh{};
     mesh.vb = vb;
     mesh.ib = ib;
@@ -359,7 +336,6 @@ UINT CreateCubeMeshGPU()
     mesh.ibv.Format = DXGI_FORMAT_R16_UINT;
     mesh.ibv.SizeInBytes = ibBytes;
 
-    // регистрируем в массиве мешей
     UINT id = (UINT)g_meshes.size();
     g_meshes.emplace_back(std::move(mesh));
 

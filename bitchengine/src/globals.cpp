@@ -41,24 +41,22 @@ UINT g_indexCount = 0;
 ComPtr<ID3D12RootSignature> g_rootSig;
 ComPtr<ID3D12PipelineState> g_pso;
 
-ComPtr<ID3D12Resource> g_cb;     // upload-ресурс под CB
-uint8_t* g_cbPtr = nullptr; // мапнутый указатель
-float                  g_angle = 0.0f;    // для вращения
+ComPtr<ID3D12Resource> g_cb;    
+uint8_t* g_cbPtr = nullptr;
+float                  g_angle = 0.0f;   
 
-// Камера/проекция (храним отдельно, чтобы не пересчитывать каждый кадр)
 XMFLOAT4X4 g_view, g_proj;
 Camera g_cam;
 
 XMFLOAT3 g_camPos = { 0.0f, 0.0f, -5.0f };
-float g_yaw = 0.0f;   // вращение по оси Y
-float g_pitch = 0.0f; // вращение по оси X
+float g_yaw = 0.0f; 
+float g_pitch = 0.0f;
 
-// Настройки
 bool g_mouseLook = false;
 POINT g_lastMouse = { 0, 0 };
 bool g_mouseHasPrev = false;
 
-bool g_appActive = false;   // есть ли фокус у нашего окна
+bool g_appActive = false;
 
 std::vector<ComPtr<ID3D12Resource>> g_uploadKeepAlive;
 ComPtr<ID3D12DescriptorHeap> g_imguiHeap;
@@ -71,21 +69,20 @@ std::vector<MeshGPU>    g_meshes;
 std::vector<Entity>     g_entities;
 
 ComPtr<ID3D12DescriptorHeap> g_sampHeap;
-UINT                         g_sampInc = 0; // шаг
+UINT                         g_sampInc = 0; 
 
-// Выбор пользователя (для UI)
-int g_uiAddrMode = 0;   // 0..4 (Wrap, Mirror, Clamp, Border, MirrorOnce)
-int g_uiFilter = 1;   // 0..2 (Point, Linear, Anisotropic)
-int g_uiAniso = 8;   // 1..16 (используется, если Anisotropic)
+int g_uiAddrMode = 0;   
+int g_uiFilter = 1;   
+int g_uiAniso = 8;
 
 float g_heightMap = 12;
 bool g_terrainonetile = 0;
 
 float g_uvMul = 1.0f;
 
-int   uiGridN = 4;      // 2..512
-float uiWorldSize = 400.f;  // метры
-int   uiTileVertsN = 75;     // вершины в одном тайле (CreateTerrainGrid)
+int   uiGridN = 4;     
+float uiWorldSize = 400.f;  
+int   uiTileVertsN = 75;    
 int   uiLodPx = 40;
 float g_lodThresholdPx = 120.f;
 float g_uiSkirtDepth = 5.f;
@@ -96,8 +93,6 @@ UINT g_cbTerrainStride = 0;
 
 UINT g_texFallbackId = 0;
 
-// GBUFFER
-
 ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;
 UINT g_gbufRTVInc = 0;
 
@@ -105,7 +100,6 @@ ComPtr<ID3D12Resource> g_gbufAlbedo;
 ComPtr<ID3D12Resource> g_gbufNormal;
 ComPtr<ID3D12Resource> g_gbufPosition;
 
-// SRV индексы в общей g_srvHeap (для lighting pass/отладки)
 UINT g_gbufAlbedoSRV = UINT_MAX;
 UINT g_gbufNormalSRV = UINT_MAX;
 UINT g_gbufPositionSRV = UINT_MAX;
@@ -117,10 +111,10 @@ ComPtr<ID3D12PipelineState> g_psoGBuffer;
 ComPtr<ID3D12RootSignature> g_rsLighting;
 ComPtr<ID3D12PipelineState> g_psoLighting;
 
-ComPtr<ID3D12Resource> g_cbPerObject;  // общий upload-буфер для ВСЕХ объектов
+ComPtr<ID3D12Resource> g_cbPerObject; 
 uint8_t* g_cbPerObjectPtr = nullptr;
-UINT                   g_cbStride = 0;        // выровненный шаг (>= sizeof(CBPerObject), кратен 256)
-UINT                   g_cbMaxPerFrame = 0;   // макс. объектов на кадр
+UINT                   g_cbStride = 0;  
+UINT                   g_cbMaxPerFrame = 0;  
 
 ComPtr<ID3D12Resource> g_cbLighting;
 uint8_t* g_cbLightingPtr = nullptr;
@@ -128,13 +122,12 @@ uint8_t* g_cbLightingPtr = nullptr;
 std::vector<LightAuthor> g_lightsAuthor;
 int g_selectedLight = -1;
 
-int g_gbufDebugMode = 0; // 0=Lighting, 1=Albedo, 2=Normal, 3=Depth
+int g_gbufDebugMode = 0; 
 
 ComPtr<ID3D12Resource> g_gbuf[GBUF_COUNT];
 D3D12_CPU_DESCRIPTOR_HANDLE g_gbufRTV[GBUF_COUNT]{};
 D3D12_GPU_DESCRIPTOR_HANDLE g_gbufSRV[GBUF_COUNT]{};
 
-// Текущее состояние каждой текстуры
 D3D12_RESOURCE_STATES g_gbufState[GBUF_COUNT] = {
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COMMON
 };
@@ -151,7 +144,7 @@ uint8_t* g_cbTerrainPtr = nullptr;
 
 MeshGPU g_terrainGrid;
 
-ComPtr<ID3D12Resource> g_cbScene;  // upload
+ComPtr<ID3D12Resource> g_cbScene; 
 uint8_t* g_cbScenePtr = nullptr;
 
 UINT heightSrvIndex;

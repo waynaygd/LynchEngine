@@ -3,7 +3,6 @@
 
 void RenderFrame()
 {
-	// ===== 0) Reset =====
 	HR(g_alloc[g_frameIndex]->Reset());
 	HR(g_cmdList->Reset(g_alloc[g_frameIndex].Get(), nullptr));
 
@@ -27,36 +26,27 @@ void RenderFrame()
 	XMMATRIX V = g_cam.View();
 	XMMATRIX P = g_cam.Proj();	
 
-	// ===== 1) GEOMETRY PASS -> GBUFFER (MRT) =====
-
-	// ★ Переводим все GBuffer в RENDER_TARGET (и обновляем их текущие состояния)
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), depthStateB, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-
-	// MRT + DSV
 	D3D12_CPU_DESCRIPTOR_HANDLE mrt[2] = { g_gbufRTV[0], g_gbufRTV[1] };
 	auto dsv = g_dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	g_cmdList->OMSetRenderTargets(2, mrt, FALSE, &dsv);
 
-	// viewport/scissor
 	g_cmdList->RSSetViewports(1, &g_viewport);
 	g_cmdList->RSSetScissorRects(1, &g_scissor);
 
-	// clear MRT+depth
-	const float c0[4] = { 0, 0, 0, 1 }; // Albedo  (как в CreateGBuffer)
-	const float c1[4] = { 0, 0, 1, 1 }; // Normal  (как в CreateGBuffer: в+Z)
+	const float c0[4] = { 0, 0, 0, 1 }; 
+	const float c1[4] = { 0, 0, 1, 1 }; 
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[0], c0, 0, nullptr);
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[1], c1, 0, nullptr);
 	g_cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-	// RS/PSO (GBuffer)
 	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
 	g_cmdList->SetPipelineState(g_psoGBuffer.Get());
 
-	// ★ В этом пассе мы сэмплируем текстуры материалов => нужна и SRV‑heap, и SAMP‑heap
 	{
 		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 		g_cmdList->SetDescriptorHeaps(2, heaps);
@@ -70,7 +60,6 @@ void RenderFrame()
 		const MeshGPU& m = g_meshes[e.meshId];
 		const TextureGPU& t = g_textures[e.texId];
 
-		// World
 		XMMATRIX S = XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z);
 		XMMATRIX Rx = XMMatrixRotationX(XMConvertToRadians(e.rotDeg.x));
 		XMMATRIX Ry = XMMatrixRotationY(XMConvertToRadians(e.rotDeg.y));
@@ -85,16 +74,15 @@ void RenderFrame()
 		XMStoreFloat4x4(&c.M, XMMatrixTranspose(M));
 		XMStoreFloat4x4(&c.V, XMMatrixTranspose(V));
 		XMStoreFloat4x4(&c.P, XMMatrixTranspose(P));
-		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));  // <- та же схема
+		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT)); 
 		c.uvMul = e.uvMul;
 
-		if (drawIdx >= g_cbMaxPerFrame) { /* опционально: assert или увеличь maxPerFrame */ }
+		if (drawIdx >= g_cbMaxPerFrame) { }
 		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
 
 		D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
 		g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
 
-		// t0 = текстура материала
 		g_cmdList->SetGraphicsRootDescriptorTable(1, t.gpu);
 
 		g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
@@ -106,15 +94,12 @@ void RenderFrame()
 			if (sm.materialId != UINT(-1) && sm.materialId < m.materialsTexId.size())
 				tid = m.materialsTexId[sm.materialId];
 
-			// 1) если material дал валидный texId — используем его
 			if (tid != UINT(-1) && tid < g_textures.size())
 				return tid;
 
-			// 2) иначе пытаемся фолбэк сущности
 			if (entityFallback != UINT(-1) && entityFallback < g_textures.size())
 				return entityFallback;
 
-			// 3) в крайнем случае — глобальный движковый фолбэк
 			return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
 			};
 
@@ -130,12 +115,10 @@ void RenderFrame()
 	if (!g_terrainonetile) {
 		if (!g_nodes.empty() && g_root < g_nodes.size())
 		{
-			// 1) Фрустум мира
 			InitFrustum(P);
 			BoundingFrustum frWorld;
 			g_frustumProj.Transform(frWorld, XMMatrixInverse(nullptr, V));
 
-			// sanity: камера должна быть ВНУТРИ фрустума
 			{
 				XMFLOAT3 cp = g_cam.pos;
 				BoundingBox camBox({ cp.x,cp.y,cp.z }, { 1,1,1 });
@@ -145,7 +128,6 @@ void RenderFrame()
 
 			const XMMATRIX VP = V * P;
 
-			// 2) Выбор узлов
 			float projScale = ProjScaleFrom(P, g_viewport.Height);
 			std::vector<uint32_t> drawNodes; drawNodes.reserve((UINT)g_nodes.size());
 
@@ -153,7 +135,6 @@ void RenderFrame()
 				projScale, (float)g_lodThresholdPx,
 				drawNodes);
 
-			// 3) RS/PSO + heaps
 			g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
 			g_cmdList->SetPipelineState(g_psoTerrain.Get());
 			{
@@ -161,7 +142,6 @@ void RenderFrame()
 				g_cmdList->SetDescriptorHeaps(2, heaps);
 			}
 
-			// 4) CBScene (НЕ транспонируем для фрустума; в CB — ТРАНСПОНИРУЕМ)
 			CBScene sc{};
 			XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(V * P));
 			XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V));
@@ -170,18 +150,15 @@ void RenderFrame()
 
 			UpdateTilesHeight(g_heightMap);
 
-			// 5) Общая сетка на все тайлы
 			g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
 			g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
 
-			// 6) Рисуем выбранные листья
 			for (uint32_t nid : drawNodes)
 			{
 				const QNode& q = g_nodes[nid];
 				const TileRes& tr = g_tiles[q.tileIndex];
 
-				// смещение для этого тайла
 				size_t offset = (size_t)q.tileIndex * g_cbTerrainStride;
 				uint8_t* dst = g_cbTerrainTilesPtr + offset;
 				memcpy(dst, &tr.cb, sizeof(tr.cb));
@@ -189,8 +166,8 @@ void RenderFrame()
 				g_cmdList->SetGraphicsRootConstantBufferView(
 					0, g_cbTerrainTiles->GetGPUVirtualAddress() + offset);
 
-				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);  // t0
-				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv); // t1
+				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv); 
+				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv);
 
 				g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
 				++leaves_count;
@@ -206,13 +183,12 @@ void RenderFrame()
 				const TileRes& tr = g_tiles[q.tileIndex];
 
 				const size_t off = size_t(q.tileIndex) * g_cbTerrainStride;
-				// если выше уже писали CB — можно НЕ копировать ещё раз; оставлю для простоты:
 				std::memcpy(g_cbTerrainTilesPtr + off, &tr.cb, sizeof(tr.cb));
 
-				g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrainTiles->GetGPUVirtualAddress() + off); // b0 (CBTerrainTile)
-				g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());              // b1 (CBScene)
-				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);  // t0 (height)
-				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv); // t1 (diffuse)
+				g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrainTiles->GetGPUVirtualAddress() + off);
+				g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());             
+				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv); 
+				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv);
 
 				g_cmdList->DrawIndexedInstanced(g_terrainSkirt.indexCount, 1, 0, 0, 0);
 			}
@@ -223,29 +199,26 @@ void RenderFrame()
 		g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
 		g_cmdList->SetPipelineState(g_psoTerrain.Get());
 
-		// после смены RS заново подключаем SRV/SAMP кучи
 		{
 			ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 			g_cmdList->SetDescriptorHeaps(2, heaps);
 		}
 
-		// b1: CBScene (если VS террейна использует viewProj [+ view])
 		CBScene sc{};
 		XMStoreFloat4x4(&sc.viewProj, XMMatrixTranspose(V * P));
-		XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V)); // если не нужен — убери эту строку
+		XMStoreFloat4x4(&sc.view, XMMatrixTranspose(V));
 		memcpy(g_cbScenePtr, &sc, sizeof(sc));
 
-		// b0: CBTerrainTile
 		CBTerrainTile cb{};
 		cb.tileOrigin = { 0, 0 };
 		cb.tileSize = 25.0f;
-		cb.heightScale = g_heightMap;          // VS делает y = (h-0.5)*heightScale
+		cb.heightScale = g_heightMap;        
 		memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
 
-		g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); // b0
-		g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());   // b1
-		g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);         // t0
-		g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);        // t1
+		g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); 
+		g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());   
+		g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);         
+		g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);       
 
 		g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
@@ -253,22 +226,16 @@ void RenderFrame()
 		g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
 	}
 
-	// ===== 2) GBuffer -> SRV для LIGHTING =====
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-
-	// ===== 3) LIGHTING PASS -> BACKBUFFER =====
-
-	// backbuffer: PRESENT -> RT
 	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	g_cmdList->ResourceBarrier(1, &bbToRT);
 
-	// RTV backbuffer
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(
 		g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvInc);
 	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
@@ -276,21 +243,17 @@ void RenderFrame()
 	const float clearBB[4] = { 0.06f, 0.06f, 0.08f, 1.0f };
 	g_cmdList->ClearRenderTargetView(rtv, clearBB, 0, nullptr);
 
-	// RS/PSO (Lighting)
 	g_cmdList->SetGraphicsRootSignature(g_rsLighting.Get());
 	g_cmdList->SetPipelineState(g_psoLighting.Get());
 
-	// ★ В этом пассе читаем GBuffer (SRV) — сэмплер тут обычно не нужен,
-	// но если шейдер ожидает s0 — тоже подключи обе кучи для простоты:
 	{
 		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 		g_cmdList->SetDescriptorHeaps(2, heaps);
 	}
 
-	// Таблица SRV t0..t2: albedo/normal/position — подряд в g_srvHeap
 	g_cmdList->SetGraphicsRootDescriptorTable(0, SRV_GPU(g_gbufAlbedoSRV));
 
-	if (g_lightsAuthor.empty()) { // стартовый directional
+	if (g_lightsAuthor.empty()) { 
 		g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
@@ -313,9 +276,8 @@ void RenderFrame()
 		G.color = A.color;
 		G.intensity = A.intensity;
 
-		// ВАЖНО: оставляем в WORLD
 		G.posW = A.posW;
-		G.dirW = A.dirW; // нормализуй при редактировании
+		G.dirW = A.dirW; 
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));
@@ -325,23 +287,20 @@ void RenderFrame()
 	L.lightCount = n;
 	L.camPosVS = { 0,0,0 };
 
-	// матрицы оставляй как было
 	XMMATRIX invP = XMMatrixInverse(nullptr, P);
 	XMStoreFloat4x4(&L.invP, XMMatrixTranspose(invP));
 
 	XMMATRIX invV = XMMatrixInverse(nullptr, V);
-	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); // пусть лежит, PS его не обязан трогать
+	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); 
 
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
 
 
-	// fullscreen triangle
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
 	
 
-	// ===== 4) IMGUI поверх бэкбуфера =====
 	ImGui_ImplWin32_NewFrame();
 	ImGui_ImplDX12_NewFrame();
 	ImGui::NewFrame();
@@ -362,13 +321,11 @@ void RenderFrame()
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList.Get());
 	}
 
-	// ===== 5) Backbuffer: RT -> PRESENT =====
 	auto bbToPresent = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	g_cmdList->ResourceBarrier(1, &bbToPresent);
 
-	// submit + present + sync
 	HR(g_cmdList->Close());
 	ID3D12CommandList* lists[] = { g_cmdList.Get() };
 	g_cmdQueue->ExecuteCommandLists(1, lists);
@@ -392,7 +349,6 @@ void WaitForGPU() {
 	const UINT64 fenceToWait = g_fenceValue++;
 	HR(g_cmdQueue->Signal(g_fence.Get(), fenceToWait));
 
-	// Event должен существовать
 	if (!g_fenceEvent) {
 		g_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 		if (!g_fenceEvent) {
@@ -442,7 +398,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			DX_Resize(w, h);
 		}
 		else {
-			// запомним — применим после InitD3D12
 			g_pendingW = w; g_pendingH = h;
 		}
 		return 0;
@@ -456,11 +411,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			ReleaseCapture();
 			ClipCursor(nullptr);
 			ShowCursor(TRUE);
-			g_mouseHasPrev = false; // чтобы не было рывка при возврате
+			g_mouseHasPrev = false; 
 		}
 		else {
 			g_appActive = true;
-			// курсор показываем; захватывать начнём только по ЛКМ
 			ShowCursor(TRUE);
 		}
 		return 0;
@@ -501,7 +455,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			POINT p = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 
 			if (!g_mouseHasPrev) {
-				// если по какой-то причине не было базовой точки — установим и выходим
 				g_lastMouse = p;
 				g_mouseHasPrev = true;
 				return 0;
@@ -509,7 +462,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			int dx = p.x - g_lastMouse.x;
 			int dy = p.y - g_lastMouse.y;
-			g_lastMouse = p; // обновляем «предыдущую» на текущую
+			g_lastMouse = p; 
 
 			g_cam.AddYawPitch(dx * g_cam.mouseSens, -dy * g_cam.mouseSens);
 			g_cam.UpdateView();
@@ -519,7 +472,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	}
 	case WM_MOUSEWHEEL:
 	{
-		int delta = GET_WHEEL_DELTA_WPARAM(wParam); // 120 за «щелчок»
+		int delta = GET_WHEEL_DELTA_WPARAM(wParam);
 		g_cam.fovY = std::clamp(g_cam.fovY - float(delta) * 0.0005f, XM_PI / 12.0f, XM_PI / 1.2f);
 		g_cam.SetLens(g_cam.fovY, g_cam.aspect, g_cam.zn, g_cam.zf);
 		return 0;
