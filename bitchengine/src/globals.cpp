@@ -77,6 +77,7 @@ int g_uiAniso = 8;
 
 float g_heightMap = 12;
 bool g_terrainonetile = 0;
+bool g_terrainshow_wireframe = 0;
 
 float g_uvMul = 1.0f;
 
@@ -138,6 +139,7 @@ D3D12_RESOURCE_STATES depthStateB = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 ComPtr<ID3D12RootSignature> g_rsTerrain;
 ComPtr<ID3D12PipelineState> g_psoTerrain;
 ComPtr<ID3D12PipelineState> g_psoTerrainSkirt;
+ComPtr<ID3D12PipelineState> g_psoTerrainWF;
 
 ComPtr<ID3D12Resource> g_cbTerrain;
 uint8_t* g_cbTerrainPtr = nullptr;

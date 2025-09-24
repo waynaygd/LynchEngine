@@ -215,6 +215,7 @@ void BuildEditorUI()
                 UpdateTilesHeight(g_heightMap);
             }
             ImGui::Checkbox("One Tile Mode", &g_terrainonetile);
+            ImGui::Checkbox("Show Wireframe", &g_terrainshow_wireframe);
             ImGui::Text("Frustum Tiles showed: %d", (int)leaves_count);
 
             ImGui::EndTabItem();
@@ -628,7 +629,7 @@ void CreateTerrainRSandPSO()
     rast.DepthBiasClamp = 0.0f;
     pso.RasterizerState = rast;
 
-    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT); 
+    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     pso.NumRenderTargets = 2;
     pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -636,6 +637,31 @@ void CreateTerrainRSandPSO()
     pso.SampleDesc = { 1,0 };
 
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrainSkirt)));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_wireframe{};
+    pso_wireframe.pRootSignature = g_rsTerrain.Get();
+    pso_wireframe.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
+    pso_wireframe.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
+    pso_wireframe.InputLayout = { ilSkirt, _countof(ilSkirt) };
+    pso_wireframe.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    pso_wireframe.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+    pso_wireframe.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+
+    pso_wireframe.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso_wireframe.DepthStencilState.DepthEnable = TRUE;
+
+    pso_wireframe.SampleMask = UINT_MAX;
+    pso_wireframe.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso_wireframe.NumRenderTargets = 2;
+    pso_wireframe.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso_wireframe.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    pso_wireframe.DSVFormat = g_depthFormat;
+    pso_wireframe.SampleDesc = { 1, 0 };
+
+    HR(g_device->CreateGraphicsPipelineState(&pso_wireframe, IID_PPV_ARGS(&g_psoTerrainWF)));
+
+
 }
 
 const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R32_TYPELESS;
@@ -847,7 +873,6 @@ void DX_LoadAssets()
     Scene_AddEntity(meshBodganov, texBogdan, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
     Scene_AddEntity(meshMarkaryan, texArsen, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
     Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
-    // Scene_AddEntity(meshCube, texCrate, {-2,0,0}, {0,0,0}, {1,1,1});
 }
 
 void DX_LoadTerrain()

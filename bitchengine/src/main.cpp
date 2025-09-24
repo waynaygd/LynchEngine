@@ -136,7 +136,13 @@ void RenderFrame()
 				drawNodes);
 
 			g_cmdList->SetGraphicsRootSignature(g_rsTerrain.Get());
-			g_cmdList->SetPipelineState(g_psoTerrain.Get());
+
+			if (!g_terrainshow_wireframe) {
+				g_cmdList->SetPipelineState(g_psoTerrain.Get());
+			}
+			else {
+				g_cmdList->SetPipelineState(g_psoTerrainWF.Get());
+			}
 			{
 				ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 				g_cmdList->SetDescriptorHeaps(2, heaps);

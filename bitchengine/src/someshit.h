@@ -206,6 +206,7 @@ extern D3D12_RESOURCE_STATES depthStateB;
 extern ComPtr<ID3D12RootSignature> g_rsTerrain;
 extern ComPtr<ID3D12PipelineState> g_psoTerrain;
 extern ComPtr<ID3D12PipelineState> g_psoTerrainSkirt;
+extern ComPtr<ID3D12PipelineState> g_psoTerrainWF;
 
 extern ComPtr<ID3D12Resource> g_cbTerrain;
 extern uint8_t* g_cbTerrainPtr;
@@ -226,6 +227,7 @@ extern std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
 
 extern float g_heightMap;
 extern bool g_terrainonetile;
+extern bool g_terrainshow_wireframe;
 
 extern int   uiGridN;  
 extern float uiWorldSize;
