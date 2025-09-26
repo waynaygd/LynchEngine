@@ -10,9 +10,6 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "DirectXTex.lib")
 
-// ────────────────────────────────────────────────────────────────────────────
-// IMGUI
-// ────────────────────────────────────────────────────────────────────────────
 void InitImGui(HWND hwnd)
 {
     IMGUI_CHECKVERSION();
@@ -216,7 +213,7 @@ void BuildEditorUI()
             }
             ImGui::Checkbox("One Tile Mode", &g_terrainonetile);
             ImGui::Checkbox("Show Wireframe", &g_terrainshow_wireframe);
-            ImGui::Text("Frustum Tiles showed: %d", (int)leaves_count);
+            ImGui::Text("Frustum Tiles showed: %d (LOD %d..%d)", (int)leaves_count, (int)minL, (int)maxL);
 
             ImGui::EndTabItem();
         }
@@ -580,12 +577,17 @@ void CreateTerrainRSandPSO()
     HR(g_device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
         IID_PPV_ARGS(&g_rsTerrain)));
 
-    auto ter_vs = CompileShaderFromFile(L"shaders\\terrain_vs.hlsl", "main", "vs_5_1");
+    auto ter_vs = CompileShaderFromFile(L"shaders\\terrain_vs.hlsl", "VSBase", "vs_5_1");
     auto ter_ps = CompileShaderFromFile(L"shaders\\terrain_ps.hlsl", "main", "ps_5_1");
     if (!ter_vs || !ter_ps) {
         MessageBoxA(nullptr, "terrain VS/PS failed to compile (see debug output)", "Shader Error", MB_OK);
         return; 
     }
+
+    D3D12_INPUT_ELEMENT_DESC ilBase[] = {
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uv
+
+    };
 
     D3D12_INPUT_ELEMENT_DESC ilSkirt[] = {
         { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uv
@@ -596,7 +598,7 @@ void CreateTerrainRSandPSO()
     pso.pRootSignature = g_rsTerrain.Get();
     pso.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
     pso.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
-    pso.InputLayout = { ilSkirt, _countof(ilSkirt) };
+    pso.InputLayout = { ilBase, _countof(ilBase) };
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     pso.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
 
@@ -615,34 +617,36 @@ void CreateTerrainRSandPSO()
 
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrain)));
 
+    auto ter_skirt_vs = CompileShaderFromFile(L"shaders\\terrain_vs.hlsl", "VSSkirt", "vs_5_1");
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_skirt = {};
     pso_skirt.pRootSignature = g_rsTerrain.Get();
-    pso_skirt.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
+    pso_skirt.VS = { ter_skirt_vs->GetBufferPointer(), ter_skirt_vs->GetBufferSize() };
     pso_skirt.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
     pso_skirt.InputLayout = { ilSkirt, _countof(ilSkirt) };
     pso_skirt.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    pso_skirt.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    pso_skirt.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    pso_skirt.RasterizerState.DepthBias = 2;
+    pso_skirt.RasterizerState.SlopeScaledDepthBias = 1.0f;
+    pso_skirt.RasterizerState.DepthBiasClamp = 0.0f;
 
-    auto rast = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    rast.CullMode = D3D12_CULL_MODE_FRONT; 
-    rast.DepthBias = 2;   
-    rast.SlopeScaledDepthBias = 1.0f; 
-    rast.DepthBiasClamp = 0.0f;
-    pso.RasterizerState = rast;
+    pso_skirt.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso_skirt.SampleMask = UINT_MAX;
+    pso_skirt.NumRenderTargets = 2;
+    pso_skirt.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso_skirt.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    pso_skirt.DSVFormat = g_depthFormat;
+    pso_skirt.SampleDesc = { 1, 0 };
+    pso_skirt.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    pso.NumRenderTargets = 2;
-    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    pso.DSVFormat = g_depthFormat;
-    pso.SampleDesc = { 1,0 };
-
-    HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTerrainSkirt)));
+    HR(g_device->CreateGraphicsPipelineState(&pso_skirt, IID_PPV_ARGS(&g_psoTerrainSkirt)));
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_wireframe{};
     pso_wireframe.pRootSignature = g_rsTerrain.Get();
     pso_wireframe.VS = { ter_vs->GetBufferPointer(), ter_vs->GetBufferSize() };
     pso_wireframe.PS = { ter_ps->GetBufferPointer(), ter_ps->GetBufferSize() };
-    pso_wireframe.InputLayout = { ilSkirt, _countof(ilSkirt) };
+    pso_wireframe.InputLayout = { ilBase, _countof(ilBase) };
     pso_wireframe.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
     pso_wireframe.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 

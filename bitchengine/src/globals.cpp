@@ -81,12 +81,12 @@ bool g_terrainshow_wireframe = 0;
 
 float g_uvMul = 1.0f;
 
-int   uiGridN = 4;     
-float uiWorldSize = 400.f;  
-int   uiTileVertsN = 75;    
-int   uiLodPx = 40;
-float g_lodThresholdPx = 120.f;
-float g_uiSkirtDepth = 5.f;
+int   uiGridN = 32;     
+float uiWorldSize = 200.f;  
+int   uiTileVertsN = 33;    
+int   uiLodPx = 8;
+float g_lodThresholdPx = 1000.f;
+float g_uiSkirtDepth = 5000.f;
 
 ComPtr<ID3D12Resource> g_cbTerrainTiles;
 uint8_t* g_cbTerrainTilesPtr = nullptr;
@@ -159,3 +159,5 @@ UINT terrain_height;
 std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
 
 int leaves_count;
+int minL = 99, maxL = -1;
+int drawnodes_size;

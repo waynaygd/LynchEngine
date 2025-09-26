@@ -55,51 +55,58 @@ void BuildLeafTilesGrid(uint32_t gridN, float worldSize, float heightScale, floa
     using namespace DirectX;
     g_tiles.clear(); g_nodes.clear();
 
-    const float leaf = worldSize / gridN;
-    const float start = -0.5f * worldSize;   
+    const float leafSize = worldSize / gridN;
+    const float start = -0.5f * worldSize;
     const float hminY = -heightScale * 0.5f;
     const float hmaxY = heightScale * 0.5f;
 
-  
-    for (uint32_t y = 0; y < gridN; ++y)
-        for (uint32_t x = 0; x < gridN; ++x) {
-            TileRes tr{};
-            tr.cb.tileOrigin = { start + x * leaf, start + y * leaf };
-            tr.cb.tileSize = leaf;
-            tr.cb.heightScale = heightScale;
-            tr.cb.skirtDepth = skirtDepth;
-            tr.heightSrv = heightSrv;      
-            tr.diffuseSrv = diffuseSrv;     
-            tr.aabbMin = { tr.cb.tileOrigin.x,          hminY, tr.cb.tileOrigin.y };
-            tr.aabbMax = { tr.cb.tileOrigin.x + leaf,    hmaxY, tr.cb.tileOrigin.y + leaf };
-            g_tiles.push_back(tr);
-        }
+    g_tiles.reserve((size_t)(gridN * gridN * 4 / 3 + 8));
+    g_nodes.reserve((size_t)(gridN * gridN * 4 / 3 + 8));
 
     std::function<uint32_t(XMFLOAT2, float, uint8_t)> build =
-        [&](XMFLOAT2 org, float size, uint8_t L)->uint32_t {
-        QNode n{}; n.origin = org; n.size = size; n.level = L;
-        n.aabbMin = { org.x,        hminY, org.y };
-        n.aabbMax = { org.x + size,   hmaxY, org.y + size };
+        [&](XMFLOAT2 org, float size, uint8_t L)->uint32_t
+        {
+            QNode n{};
+            n.origin = org;
+            n.size = size;
+            n.level = L;
+            n.aabbMin = { org.x,        hminY, org.y };
+            n.aabbMax = { org.x + size, hmaxY, org.y + size };
 
-        if (fabsf(size - leaf) < 1e-4f) {
-            uint32_t x = (uint32_t)std::min<float>(gridN - 1, floorf((org.x - start + 0.5f * leaf) / leaf));
-            uint32_t y = (uint32_t)std::min<float>(gridN - 1, floorf((org.y - start + 0.5f * leaf) / leaf));
-            n.tileIndex = int(y * gridN + x);
-        }
+            TileRes tr{};
+            tr.cb.tileOrigin = org;
+            tr.cb.tileSize = size;
+            tr.cb.heightScale = heightScale;
+            tr.cb.skirtDepth = skirtDepth;
+            tr.cb.worldSize = worldSize;
+            tr.heightSrv = heightSrv;
+            tr.diffuseSrv = diffuseSrv;
+            tr.aabbMin = n.aabbMin;
+            tr.aabbMax = n.aabbMax;
+            tr.level = L;
 
-        uint32_t id = (uint32_t)g_nodes.size(); g_nodes.push_back(n);
-        if (n.tileIndex < 0) {
-            float h = size * 0.5f; uint8_t L1 = L + 1;
-            g_nodes[id].child[0] = build({ org.x    ,org.y }, h, L1);
-            g_nodes[id].child[1] = build({ org.x + h  ,org.y }, h, L1);
-            g_nodes[id].child[2] = build({ org.x    ,org.y + h }, h, L1);
-            g_nodes[id].child[3] = build({ org.x + h  ,org.y + h }, h, L1);
-        }
-        return id;
+            const uint32_t thisTile = (uint32_t)g_tiles.size();
+            g_tiles.push_back(tr);
+            n.tileIndex = (int)thisTile; 
+
+            const uint32_t id = (uint32_t)g_nodes.size();
+            g_nodes.push_back(n);
+
+            if (size > leafSize * 1.0001f)
+            {
+                const float   h = size * 0.5f;
+                const uint8_t L1 = (uint8_t)(L + 1);
+                g_nodes[id].child[0] = build({ org.x,     org.y }, h, L1);
+                g_nodes[id].child[1] = build({ org.x + h,   org.y }, h, L1);
+                g_nodes[id].child[2] = build({ org.x,     org.y + h }, h, L1);
+                g_nodes[id].child[3] = build({ org.x + h,   org.y + h }, h, L1);
+            }
+            return id;
         };
 
     g_root = build({ start, start }, worldSize, 0);
 }
+
 
 void InitTerrainTiling()
 {
@@ -151,22 +158,29 @@ void SelectNodes(uint32_t id,
     if (AabbOutsideFrustumDXC(frWorld, n.aabbMin, n.aabbMax))
         return;
 
-    float dist = DistanceToAabbHorizontal(camPos, n.aabbMin, n.aabbMax);
-    dist = (std::max)(dist, 0.001f);
-    float errPx = n.size * projScale / dist;
+    const float dx = (std::max)((std::max)(n.aabbMin.x - camPos.x, 0.f), camPos.x - n.aabbMax.x);
+    const float dz = (std::max)((std::max)(n.aabbMin.z - camPos.z, 0.f), camPos.z - n.aabbMax.z);
+    const float d = (std::max)(std::sqrt(dx * dx + dz * dz), 0.001f);
 
-    const bool leaf = (n.tileIndex >= 0);
-    if (!leaf && errPx > thresholdPx) {
-        for (int i = 0; i < 4; ++i) {
-            uint32_t c = n.child[i];
-            if (c != UINT32_MAX)
-                SelectNodes(c, camPos, frWorld, projScale, thresholdPx, out);
-        }
+    const float errPx = n.size * projScale / d;
+
+    const float splitThreshold = thresholdPx * 0.85f;
+    const float mergeThreshold = thresholdPx * 1.15f;
+
+    const bool canSplit = (n.child[0] != UINT32_MAX); 
+
+    if (canSplit && errPx > splitThreshold)
+    {
+        for (int i = 0; i < 4; ++i)
+            if (n.child[i] != UINT32_MAX)
+                SelectNodes(n.child[i], camPos, frWorld, projScale, thresholdPx, out);
     }
-    else {
-        GatherLeaves(id, out);
+    else
+    {
+        out.push_back(id);
     }
 }
+
 
 void InitFrustum(const XMMATRIX& P)
 {

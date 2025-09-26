@@ -21,8 +21,11 @@ struct CBTerrainTile {
     float    tileSize; 
     float    heightScale;        
     float    skirtDepth;
+
+    float  worldSize;    
+    float  _pad[3];    
 };
-static_assert(sizeof(CBTerrainTile) % 20 == 0, "CB must be 20-byte aligned");
+static_assert(sizeof(CBTerrainTile) % 36 == 0, "CB must be 36-byte aligned");
 
 
 struct TerrainTile {

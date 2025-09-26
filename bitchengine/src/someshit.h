@@ -241,6 +241,9 @@ extern uint8_t* g_cbTerrainTilesPtr;
 extern UINT g_cbTerrainStride;
 
 extern int leaves_count;
+extern int minL;
+extern int maxL;
+extern int drawnodes_size;
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();

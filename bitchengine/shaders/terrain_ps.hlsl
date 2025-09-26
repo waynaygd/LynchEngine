@@ -3,22 +3,21 @@ SamplerState samp : register(s0);
 
 struct VSOut
 {
-    float4 posH : SV_Position;
+    float4 posH : SV_POSITION;
     float2 uv : TEXCOORD0;
-    float3 nV : TEXCOORD1;
+    float3 nV : NORMAL0;
 };
 
 struct GOut
 {
-    float4 c0 : SV_Target0; // Albedo(+optional roughness in .a)
-    float4 c1 : SV_Target1; // Normal
+    float4 c0 : SV_Target0;
+    float4 c1 : SV_Target1;
 };
 
 GOut main(VSOut i)
 {
     float4 albedo = Diffuse.Sample(samp, i.uv);
 
-    // Если формат normal-RT — UNORM8, упакуй в [0..1]
     float3 nV = normalize(i.nV);
     float3 nPacked = nV * 0.5 + 0.5;
 

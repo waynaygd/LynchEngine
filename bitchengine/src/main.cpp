@@ -160,10 +160,15 @@ void RenderFrame()
 			g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
 			g_cmdList->IASetIndexBuffer(&g_terrainGrid.ibv);
 
+			int minL = 99, maxL = -1;
+
 			for (uint32_t nid : drawNodes)
 			{
 				const QNode& q = g_nodes[nid];
 				const TileRes& tr = g_tiles[q.tileIndex];
+
+				minL = std::min<int>(minL, g_nodes[nid].level);
+				maxL = std::max<int>(maxL, g_nodes[nid].level);
 
 				size_t offset = (size_t)q.tileIndex * g_cbTerrainStride;
 				uint8_t* dst = g_cbTerrainTilesPtr + offset;
@@ -178,27 +183,33 @@ void RenderFrame()
 				g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
 				++leaves_count;
 			}
-			/*
-			g_cmdList->SetPipelineState(g_psoTerrainSkirt.Get());
-			g_cmdList->IASetVertexBuffers(0, 1, &g_terrainSkirt.vbv);
-			g_cmdList->IASetIndexBuffer(&g_terrainSkirt.ibv);
 
-			for (uint32_t nid : drawNodes)
-			{
-				const QNode& q = g_nodes[nid];
-				const TileRes& tr = g_tiles[q.tileIndex];
+			::minL = minL;
+			::maxL = maxL;
+			drawnodes_size = (int)drawNodes.size();
 
-				const size_t off = size_t(q.tileIndex) * g_cbTerrainStride;
-				std::memcpy(g_cbTerrainTilesPtr + off, &tr.cb, sizeof(tr.cb));
+			if (!g_terrainshow_wireframe) {
+				g_cmdList->SetPipelineState(g_psoTerrainSkirt.Get());
+				g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				g_cmdList->IASetVertexBuffers(0, 1, &g_terrainSkirt.vbv);
+				g_cmdList->IASetIndexBuffer(&g_terrainSkirt.ibv);
 
-				g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrainTiles->GetGPUVirtualAddress() + off);
-				g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());             
-				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv); 
-				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv);
+				for (uint32_t nid : drawNodes)
+				{
+					const QNode& q = g_nodes[nid];
+					const TileRes& tr = g_tiles[q.tileIndex];
 
-				g_cmdList->DrawIndexedInstanced(g_terrainSkirt.indexCount, 1, 0, 0, 0);
-			}
-			*/
+					const size_t off = size_t(q.tileIndex) * g_cbTerrainStride;
+					std::memcpy(g_cbTerrainTilesPtr + off, &tr.cb, sizeof(tr.cb));
+
+					g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrainTiles->GetGPUVirtualAddress() + off);
+					g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());
+					g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);
+					g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv);
+
+					g_cmdList->DrawIndexedInstanced(g_terrainSkirt.indexCount, 1, 0, 0, 0);
+				}
+			}			
 		}
 	}
 	else {
