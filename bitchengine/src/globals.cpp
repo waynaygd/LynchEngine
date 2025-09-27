@@ -83,10 +83,10 @@ float g_uvMul = 1.0f;
 
 int   uiGridN = 32;     
 float uiWorldSize = 200.f;  
-int   uiTileVertsN = 33;    
-int   uiLodPx = 8;
+int   uiTileVertsN = 12;    
+int   uiLodPx = 32;
 float g_lodThresholdPx = 1000.f;
-float g_uiSkirtDepth = 5000.f;
+float g_uiSkirtDepth = 500.f;
 
 ComPtr<ID3D12Resource> g_cbTerrainTiles;
 uint8_t* g_cbTerrainTilesPtr = nullptr;

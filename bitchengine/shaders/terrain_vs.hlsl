@@ -41,10 +41,10 @@ VSOut VSCommon(float2 uv, float skirtK)
     float hC = Height.SampleLevel(Samp, uvGlobal, 0).r;
     float hR = Height.SampleLevel(Samp, uvGlobal + float2(texel.x, 0), 0).r;
     float hU = Height.SampleLevel(Samp, uvGlobal + float2(0, texel.y), 0).r;
-
-    float yC = (hC - 0.5) * heightScale;
-    float yR = (hR - 0.5) * heightScale;
-    float yU = (hU - 0.5) * heightScale;
+    
+    float yC = hC * heightScale;
+    float yR = hR * heightScale;
+    float yU = hU * heightScale;
 
     float dx = worldSize * texel.x;
     float dz = worldSize * texel.y;

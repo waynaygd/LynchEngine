@@ -245,6 +245,8 @@ extern int minL;
 extern int maxL;
 extern int drawnodes_size;
 
+extern float dNorm;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();
