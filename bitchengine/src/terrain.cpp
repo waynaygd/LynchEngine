@@ -290,7 +290,7 @@ bool AabbOutsideByVP(const DirectX::XMMATRIX& VP, const DirectX::XMFLOAT3& mn, c
 
 void UpdateTilesHeight(float newScale) {
     for (auto& t : g_tiles) {
-        t.cb.heightScale = newScale * t.level;
+        t.cb.heightScale = newScale;
         t.aabbMin.y = -newScale * 0.5f;
         t.aabbMax.y = newScale * 0.5f;
     }

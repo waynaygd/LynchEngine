@@ -1,194 +1,164 @@
-//light_ps.hlsl
-#define MAX_LIGHTS 16
-#define LIGHT_TYPE_DIR   0
-#define LIGHT_TYPE_POINT 1
-#define LIGHT_TYPE_SPOT  2
+// light_ps.hlsl
+#define MAX_LIGHTS        16
+#define LIGHT_TYPE_DIR     0
+#define LIGHT_TYPE_POINT   1
+#define LIGHT_TYPE_SPOT    2
+
+// 1 = нормали в gNormal упакованы в [0..1] и требуют *2-1
+// 0 = нормали уже в [-1..1] (рекомендуется при RGBA16F)
+#define NORMAL_IS_PACKED   1
 
 struct Light
 {
     float3 color;
-    float intensity; // 16
+    float intensity; 
     float3 posW;
-    float radius; // 32 (??? point/spot)
+    float radius; 
     float3 dirW;
-    uint type; // 48 (type = 0/1/2)
+    uint type; 
     float cosInner;
     float cosOuter;
     float _pad0;
-    float _pad1; // 64
+    float _pad1; 
 };
 
 cbuffer CBLighting : register(b1)
 {
-    float3 camPosVS;
+    float3 camPosWS;
     float debugMode;
-    float4x4 invP;
-    float2 zRange;
+    float2 zNearFar;
     float2 _padA;
     uint lightCount;
     float3 _padB;
-    float4x4 invV;
-    Light lights[MAX_LIGHTS];
-};  
+    float4x4 invViewProj;
+    Light lights[MAX_LIGHTS]; 
+};
 
 Texture2D gAlbedo : register(t0);
-Texture2D gNormalR : register(t1);
+Texture2D gNormal : register(t1);
 Texture2D gDepth : register(t2);
+
 SamplerState gSamp : register(s0);
-SamplerState gSampZ : register(s1); // depth
+SamplerState gSampZ : register(s1);
 
-float3 ShadeDirectional(Light L, float3 nrmW, float3 albedo)
+
+float3 ReconstructWS(float2 uv, float depth01, float4x4 invVP)
 {
-    float3 ld = normalize(-L.dirW);
-    return albedo * L.color * (L.intensity * saturate(dot(nrmW, ld)));
+    float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    float4 p = mul(invVP, float4(ndc, depth01, 1.0));
+    return p.xyz / max(p.w, 1e-6);
 }
-float3 ShadePoint(Light L, float3 Pw, float3 nrmW, float3 albedo)
+
+float3 LoadNormalWS(float2 uv)
 {
-    float3 toL = L.posW - Pw;
-    float d = length(toL);
-    if (d > L.radius)
-        return 0;
-    float3 ld = toL / max(d, 1e-6);
-    float atten = saturate(1.0 - d / L.radius);
-    atten *= atten;
-    return albedo * L.color * (L.intensity * saturate(dot(nrmW, ld)) * atten);
+#if NORMAL_IS_PACKED
+    float3 n = gNormal.Sample(gSamp, uv).xyz * 2.0 - 1.0;
+#else
+    float3 n = gNormal.Sample(gSamp, uv).xyz;
+#endif
+    return normalize(n);
 }
-float3 ShadeSpot(Light L, float3 Pw, float3 nrmW, float3 albedo)
+
+float3 ShadeDirectional(in Light L, float3 N, float3 albedo)
 {
-    float3 toL = L.posW - Pw;
-    float d = length(toL);
+    float3 Ldir = normalize(-L.dirW);
+    float ndl = saturate(dot(N, Ldir));
+    return albedo * L.color * (L.intensity * ndl);
+}
+
+float3 ShadePoint(in Light L, float3 P, float3 N, float3 albedo)
+{
+    float3 V = L.posW - P;
+    float d = length(V);
     if (d > L.radius)
-        return 0;
-    float3 ld = toL / max(d, 1e-6);
+        return 0.0;
+
+    float3 Ldir = V / max(d, 1e-6);
+    float ndl = saturate(dot(N, Ldir));
+
     float atten = saturate(1.0 - d / L.radius);
-    atten *= atten;
-    float c = dot(-ld, normalize(L.dirW));
+    atten = atten * atten;
+
+    return albedo * L.color * (L.intensity * ndl * atten);
+}
+
+float3 ShadeSpot(in Light L, float3 P, float3 N, float3 albedo)
+{
+    float3 V = L.posW - P;
+    float d = length(V);
+    if (d > L.radius)
+        return 0.0;
+
+    float3 Ldir = V / max(d, 1e-6);
+    float ndl = saturate(dot(N, Ldir));
+
+    float atten = saturate(1.0 - d / L.radius);
+    atten = atten * atten;
+
+    float c = dot(-Ldir, normalize(L.dirW));
     float spot = saturate((c - L.cosOuter) / max(L.cosInner - L.cosOuter, 1e-4));
-    spot *= spot;
-    return albedo * L.color * (L.intensity * saturate(dot(nrmW, ld)) * atten * spot);
+    spot = spot * spot;
+
+    return albedo * L.color * (L.intensity * ndl * atten * spot);
 }
 
-    float3 ReconstructPosV(float2 uv, float depth01, float4x4 invP)
-    {
-        // D3D: depth уже в [0..1]
-        float2 ndcXY = uv * 2.0 - 1.0;
-        float4 clip = float4(ndcXY, depth01, 1.0);
-        float4 view = mul(clip, invP); // invP лежит ТРАНСПОНИРОВАННЫЙ
-        return view.xyz / max(view.w, 1e-6);
-    }
-
-float4 main(float4 posH : SV_Position, float2 uv : TEXCOORD) : SV_Target
+struct PSIn
 {
-    // Debug views
-    if (debugMode >= 1.0 && debugMode < 2.0) // Albedo
-        return float4(gAlbedo.Sample(gSamp, uv).rgb, 1);
+    float4 posH : SV_Position;
+    float2 uv : TEXCOORD0;
+};
 
-    if (debugMode >= 2.0 && debugMode < 3.0) // Normal
-    {
-        float3 n = normalize(gNormalR.Sample(gSamp, uv).rgb);
-        return float4(0.5 * n + 0.5, 1);
+float4 DebugView(float debugMode, float2 uv)
+{
+    if (debugMode >= 1.0 && debugMode < 2.0)
+    { 
+        return float4(gAlbedo.Sample(gSamp, uv).rgb, 1.0);
     }
-
+    if (debugMode >= 2.0 && debugMode < 3.0)
+    { 
+        float3 n = LoadNormalWS(uv);
+        return float4(n * 0.5 + 0.5, 1.0);
+    }
     if (debugMode >= 3.0 && debugMode < 4.0)
-    {
-        float d = gDepth.Sample(gSamp, uv).r;
-        return float4(d, d, d, 1);
+    { 
+        float z = gDepth.Sample(gSampZ, uv).r;
+        return float4(z.xxx, 1.0);
     }
-    
-    if (debugMode >= 4.0 && debugMode < 5.0)
+    return -1; 
+}
+
+float4 main(PSIn i) : SV_Target
+{
+    if (debugMode >= 1u && debugMode <= 4u)
     {
-        float3 Pv = ReconstructPosV(uv, gDepth.Sample(gSampZ, uv).r, invP);
-        float3 Pw = mul(float4(Pv, 1), invV).xyz;
-        float3 nrmW = normalize(gNormalR.Sample(gSamp, uv).rgb);
-
-    // ищем первый POINT
-        int idx = -1;
-    [loop]
-        for (uint i = 0; i < lightCount; ++i)
-            if (lights[i].type == 1 && idx < 0)
-                idx = i;
-        if (idx < 0)
-            return float4(0, 0, 0, 1);
-
-        float3 toL = lights[idx].posW - Pw;
-        float d = length(toL);
-        float3 ld = toL / max(d, 1e-6);
-        float ndl = saturate(dot(nrmW, ld));
-        float atten = saturate(1.0 - d / lights[idx].radius);
-        atten *= atten;
-
-        return float4(ndl, atten, 0, 1); // R=ndl, G=atten
-    }
-    
-    if (debugMode >= 6.0 && debugMode < 7.0)
-    {
-        float3 Pv = ReconstructPosV(uv, gDepth.Sample(gSampZ, uv).r, invP);
-        float3 Pw = mul(float4(Pv, 1), invV).xyz;
-        float3 nrmW = normalize(gNormalR.Sample(gSamp, uv).rgb);
-
-        int idx = -1;
-    [loop]
-        for (uint i = 0; i < lightCount; ++i)
-            if (lights[i].type == 2 && idx < 0)
-                idx = i;
-        if (idx < 0)
-            return float4(0, 0, 0, 1);
-
-        float3 toL = lights[idx].posW - Pw;
-        float d = length(toL);
-        float3 ld = toL / max(d, 1e-6);
-        float ndl = saturate(dot(nrmW, ld));
-        float atten = saturate(1.0 - d / lights[idx].radius);
-        atten *= atten;
-
-        float c = dot(-ld, normalize(lights[idx].dirW));
-        float spot = saturate((c - lights[idx].cosOuter) / max(lights[idx].cosInner - lights[idx].cosOuter, 1e-4));
-        spot *= spot;
-
-        return float4(ndl, atten, spot, 1); // R=ndl, G=atten, B=spot
+        float4 dv = DebugView(debugMode, i.uv);
+        if (dv.x >= 0.0)
+            return dv;
     }
 
-// C) N·L без нормали (фиксируем её) — проверяем только направление ld
-    if (debugMode >= 7.0 && debugMode < 8.0)
-    {
-        float3 Pv = ReconstructPosV(uv, gDepth.Sample(gSampZ, uv).r, invP);
-        float3 Pw = mul(float4(Pv, 1), invV).xyz;
-        float3 nrmW = float3(0, 1, 0); // фиксированная нормаль В МИРЕ
+    float3 albedo = gAlbedo.Sample(gSamp, i.uv).rgb;
+    float z = gDepth.Sample(gSampZ, i.uv).r;
 
-        int idx = -1;
+    if (z >= 1.0 - 1e-6)
+        return float4(0.498, 0.78, 0.9, 1);
+
+    float3 N = LoadNormalWS(i.uv);
+    float3 P = ReconstructWS(i.uv, z, invViewProj);
+
+    float3 Lsum = 0.0;
     [loop]
-        for (uint i = 0; i < lightCount; ++i)
-            if (lights[i].type == 1 && idx < 0)
-                idx = i;
-        if (idx < 0)
-            return float4(0, 0, 0, 1);
-
-        float3 ld = normalize(lights[idx].posW - Pw);
-        float ndl = saturate(dot(nrmW, ld));
-        return float4(ndl.xxx, 1);
-    }
-    
-    float3 albedo = gAlbedo.Sample(gSamp, uv).rgb;
-    float3 nrmW = normalize(gNormalR.Sample(gSamp, uv).rgb); // WORLD из G-буфера
-    float depth = gDepth.Sample(gSampZ, uv).r;
-    if (depth >= 1.0 - 1e-5)
-        return float4(0.498f, 0.78f, 0.9f, 1);
-
-    float3 Pv = ReconstructPosV(uv, depth, invP); // view
-    float3 Pw = mul(float4(Pv, 1), invV).xyz; // WORLD (invV тоже ТРАНСПОНИРОВАН)
-    
-    float3 color = 0;
-    [loop]
-    for (uint i = 0; i < lightCount; ++i)
+    for (uint k = 0; k < lightCount; ++k)
     {
-        Light L = lights[i]; // posW/dirW — WORLD
-        if (L.type == 0)
-            color += ShadeDirectional(L, nrmW, albedo);
-        else if (L.type == 1)
-            color += ShadePoint(L, Pw, nrmW, albedo);
+        Light L = lights[k];
+        if (L.type == LIGHT_TYPE_DIR)
+            Lsum += ShadeDirectional(L, N, albedo);
+        else if (L.type == LIGHT_TYPE_POINT)
+            Lsum += ShadePoint(L, P, N, albedo);
         else
-            color += ShadeSpot(L, Pw, nrmW, albedo);
+            Lsum += ShadeSpot(L, P, N, albedo);
     }
-    color += albedo * 0.03;
-    return float4(color, 1);
+
+    float3 ambient = albedo * 0.03;
+
+    return float4(Lsum + ambient, 1.0);
 }

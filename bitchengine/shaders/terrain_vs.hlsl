@@ -5,7 +5,6 @@ cbuffer CBTerrainTile : register(b0)
     float tileSize; 
     float heightScale; 
     float skirtDepth; 
-
     float worldSize;
     float3 _pad;
 }
@@ -52,7 +51,6 @@ VSOut VSCommon(float2 uv, float skirtK)
     float3 dUx = float3(dx, yR - yC, 0);
     float3 dVy = float3(0, yU - yC, dz);
     float3 nW = normalize(cross(dVy, dUx));
-    float3 nV = mul((float3x3) gView, nW);
 
     float3 pW = float3(worldXZ.x, yC, worldXZ.y);
     pW.y -= skirtDepth * skirtK;
@@ -62,7 +60,7 @@ VSOut VSCommon(float2 uv, float skirtK)
 
     o.uv = uvGlobal;
 
-    o.nV = nV;
+    o.nV = nW;
     o.skirtK = skirtK;
     return o;
 }

@@ -1,7 +1,7 @@
 Texture2D<float4> Diffuse : register(t1);
 SamplerState samp : register(s0);
 
-struct VSOut
+struct PSOut
 {
     float4 posH : SV_POSITION;
     float2 uv : TEXCOORD0;
@@ -14,12 +14,12 @@ struct GOut
     float4 c1 : SV_Target1;
 };
 
-GOut main(VSOut i)
+GOut main(PSOut i)
 {
     float4 albedo = Diffuse.Sample(samp, i.uv);
 
-    float3 nV = normalize(i.nV);
-    float3 nPacked = nV * 0.5 + 0.5;
+    float3 nW = normalize(i.nV);
+    float3 nPacked = nW * 0.5 + 0.5;
 
     GOut o;
     o.c0 = albedo;

@@ -25,15 +25,14 @@ static_assert(sizeof(LightGPU) % 16 == 0, "LightGPU must be 16B aligned");
 
 constexpr uint32_t MAX_LIGHTS = 16;
 
-struct CBLightingGPU {             
-    XMFLOAT3 camPosVS; float debugMode;
-    XMFLOAT4X4 invP;
-    DirectX::XMFLOAT2 zRange; float _padA[2]{};
-    uint32_t lightCount; float _padB[3]{};
-    XMFLOAT4X4 invV;
-    LightGPU lights[MAX_LIGHTS];
+struct CBLighting {
+    XMFLOAT3 camPosWS; float debugMode;
+    XMFLOAT2 zNearFar; XMFLOAT2 _pad;
+    UINT   lightCount; XMFLOAT3 _pad2;
+    XMFLOAT4X4 invViewProj; 
+    LightGPU   lights[MAX_LIGHTS]; 
 };
-static_assert(sizeof(CBLightingGPU) % 16 == 0, "CB must be 16B aligned");
+static_assert(sizeof(CBLighting) % 16 == 0, "CB must be 16B aligned");
 
 extern std::vector<LightAuthor> g_lightsAuthor;
 extern int g_selectedLight;

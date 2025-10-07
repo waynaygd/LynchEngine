@@ -26,10 +26,12 @@ void RenderFrame()
 	XMMATRIX V = g_cam.View();
 	XMMATRIX P = g_cam.Proj();	
 
+	XMMATRIX VP = XMMatrixMultiply(V, P);
+
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	Transition(g_cmdList.Get(), g_depthBuffer.Get(), depthStateB, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE mrt[2] = { g_gbufRTV[0], g_gbufRTV[1] };
 	auto dsv = g_dsvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -126,7 +128,6 @@ void RenderFrame()
 					OutputDebugStringA("Warn: camera is NOT inside frustum\n");
 			}
 
-			const XMMATRIX VP = V * P;
 
 			float projScale = ProjScaleFrom(P, g_viewport.Height);
 			std::vector<uint32_t> drawNodes; drawNodes.reserve((UINT)g_nodes.size());
@@ -243,10 +244,13 @@ void RenderFrame()
 		g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
 	}
 
+	g_cmdList->RSSetViewports(1, &g_viewport);
+	g_cmdList->RSSetScissorRects(1, &g_scissor);
+
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-	Transition(g_cmdList.Get(), g_depthBuffer.Get(), depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
@@ -274,7 +278,7 @@ void RenderFrame()
 		g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
-	CBLightingGPU L{};
+	CBLighting L{};
 	L.debugMode = float(g_gbufDebugMode);
 	
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
@@ -293,8 +297,12 @@ void RenderFrame()
 		G.color = A.color;
 		G.intensity = A.intensity;
 
-		G.posW = A.posW;
-		G.dirW = A.dirW; 
+		XMVECTOR pW = XMLoadFloat3(&A.posW);
+		XMVECTOR dW = XMLoadFloat3(&A.dirW);
+
+		XMStoreFloat3(&G.posW, pW);                        
+		XMStoreFloat3(&G.dirW, XMVector3Normalize(dW)); 
+
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));
@@ -302,13 +310,11 @@ void RenderFrame()
 		L.lights[i] = G;
 	}
 	L.lightCount = n;
-	L.camPosVS = { 0,0,0 };
+	L.camPosWS = g_cam.pos;          
+	L.zNearFar = { g_cam.zn, g_cam.zf };
 
-	XMMATRIX invP = XMMatrixInverse(nullptr, P);
-	XMStoreFloat4x4(&L.invP, XMMatrixTranspose(invP));
-
-	XMMATRIX invV = XMMatrixInverse(nullptr, V);
-	XMStoreFloat4x4(&L.invV, XMMatrixTranspose(invV)); 
+	XMMATRIX invVP = XMMatrixInverse(nullptr, V * P);
+	XMStoreFloat4x4(&L.invViewProj, invVP); 
 
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
@@ -317,7 +323,7 @@ void RenderFrame()
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
 	
-
+	/**/
 	ImGui_ImplWin32_NewFrame();
 	ImGui_ImplDX12_NewFrame();
 	ImGui::NewFrame();
@@ -337,6 +343,7 @@ void RenderFrame()
 		g_cmdList->SetDescriptorHeaps(1, imguiHeaps);
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList.Get());
 	}
+
 
 	auto bbToPresent = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),

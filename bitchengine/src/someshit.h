@@ -158,7 +158,6 @@ extern ComPtr<ID3D12Resource> g_gbufPosition;
 
 extern UINT g_gbufAlbedoSRV;
 extern UINT g_gbufNormalSRV;
-extern UINT g_gbufPositionSRV;
 extern UINT g_gbufDepthSRV;
 
 extern ComPtr<ID3D12RootSignature> g_rsGBuffer;
@@ -190,8 +189,7 @@ extern int g_gbufDebugMode;
 enum { 
     GBUF_ALBEDO = 0, 
     GBUF_NORMAL = 1, 
-    GBUF_POSITION = 2, 
-    GBUF_COUNT = 3 
+    GBUF_COUNT = 2
 };
 
 extern ComPtr<ID3D12Resource> g_gbuf[GBUF_COUNT];
@@ -200,8 +198,7 @@ extern D3D12_GPU_DESCRIPTOR_HANDLE g_gbufSRV[GBUF_COUNT];
 
 extern D3D12_RESOURCE_STATES g_gbufState[GBUF_COUNT];
 
-extern D3D12_RESOURCE_STATES depthState;
-extern D3D12_RESOURCE_STATES depthStateB;
+extern D3D12_RESOURCE_STATES g_depthState;
 
 extern ComPtr<ID3D12RootSignature> g_rsTerrain;
 extern ComPtr<ID3D12PipelineState> g_psoTerrain;
@@ -244,8 +241,6 @@ extern int leaves_count;
 extern int minL;
 extern int maxL;
 extern int drawnodes_size;
-
-extern float dNorm;
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();

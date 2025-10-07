@@ -5,27 +5,25 @@ SamplerState gSamp : register(s0);
 struct PSIn
 {
     float4 posH : SV_Position;
-    float3 nrmV : TEXCOORD0; // view-space normal
+    float3 nrmW : TEXCOORD0;
     float2 uv : TEXCOORD1;
 };
 
-struct GOut
+struct PSOut
 {
-    float4 Albedo : SV_Target0; // R8G8B8A8_UNORM  (linear)
-    float4 NormalR : SV_Target1; // R16G16B16A16_FLOAT (rgb = N view [-1..1], a = roughness [0..1] optional)
+    float4 rt0 : SV_Target0;
+    float4 rt1 : SV_Target1;
 };
 
-GOut main(PSIn i)
+PSOut main(PSIn i)
 {
-    GOut o;
+    PSOut o;
+    float3 A = gAlbedo.Sample(gSamp, i.uv).rgb;
 
-    // ВАЖНО: если SRV для текстуры альбедо — sRGB, то семпл уже в линейном.
-    // Если SRV UNORM, тогда делай pow(sample, 2.2).
-    float3 albedo = gAlbedo.Sample(gSamp, i.uv).rgb;
+    float3 nW = normalize(i.nrmW);
+    float3 packed = nW * 0.5 + 0.5;
 
-    float3 nrmW = normalize(i.nrmV);
-
-    o.Albedo = float4(albedo, 1);
-    o.NormalR = float4(nrmW, 1.0);
+    o.rt0 = float4(A, 1);
+    o.rt1 = float4(packed, 1);
     return o;
 }

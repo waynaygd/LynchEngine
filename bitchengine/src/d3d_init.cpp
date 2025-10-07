@@ -321,28 +321,22 @@ void DX_CreateGBuffer(UINT w, UINT h)
 
     const FLOAT clrA[4] = { 0,0,0,1 };
     const FLOAT clrN[4] = { 0,0,1,1 };
-    const FLOAT clrP[4] = { 0,0,0,0 };
 
     makeRT(fmtAlbedo, g_gbufAlbedo, clrA);
     makeRT(fmtNormal, g_gbufNormal, clrN);
-    makeRT(fmtPosition, g_gbufPosition, clrP);
 
     g_gbuf[0] = g_gbufAlbedo;
     g_gbuf[1] = g_gbufNormal;
-    g_gbuf[2] = g_gbufPosition;
 
     g_gbufState[0] = D3D12_RESOURCE_STATE_RENDER_TARGET;
     g_gbufState[1] = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    g_gbufState[2] = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
     auto rtvStart = g_gbufRTVHeap->GetCPUDescriptorHandleForHeapStart();
     g_gbufRTV[0] = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvStart, 0, g_gbufRTVInc);
     g_gbufRTV[1] = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvStart, 1, g_gbufRTVInc);
-    g_gbufRTV[2] = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvStart, 2, g_gbufRTVInc);
 
     g_device->CreateRenderTargetView(g_gbufAlbedo.Get(), nullptr, g_gbufRTV[0]);
     g_device->CreateRenderTargetView(g_gbufNormal.Get(), nullptr, g_gbufRTV[1]);
-    g_device->CreateRenderTargetView(g_gbufPosition.Get(), nullptr, g_gbufRTV[2]);
 
     auto makeSRV2D = [&](ID3D12Resource* res, DXGI_FORMAT fmt, UINT slot)
         {
@@ -680,6 +674,9 @@ void DX_CreateDepth(UINT w, UINT h)
 
     g_depthFormat = DepthDSVFmt;
 
+    D3D12_RESOURCE_STATES initial = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    g_depthState = initial;
+
     D3D12_DESCRIPTOR_HEAP_DESC dsvDesc{};
     dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     dsvDesc.NumDescriptors = 1;
@@ -999,7 +996,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     CreatePerObjectCB(1024);
     CreateTerrainCB();
-    CreateUploadCB<CBLightingGPU>(g_cbLighting, g_cbLightingPtr);
+    CreateUploadCB<CBLighting>(g_cbLighting, g_cbLightingPtr);
 
     if (g_lightsAuthor.empty()) {
         g_lightsAuthor.push_back(LightAuthor{
@@ -1057,6 +1054,9 @@ void DX_Resize(UINT w, UINT h)
         CD3DX12_CPU_DESCRIPTOR_HANDLE h(rtvStart, i, g_rtvInc);
         g_device->CreateRenderTargetView(g_backBuffers[i].Get(), nullptr, h);
     }
+
+    D3D12_RESOURCE_STATES initial = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    g_depthState = initial;
 
     g_depthBuffer.Reset();
 
@@ -1243,9 +1243,8 @@ void DX_DestroyGBuffer()
 {
     g_gbufAlbedo.Reset();
     g_gbufNormal.Reset();
-    g_gbufPosition.Reset();
     g_gbufRTVHeap.Reset();
-    g_gbufAlbedoSRV = g_gbufNormalSRV = g_gbufPositionSRV = UINT_MAX;
+    g_gbufAlbedoSRV = g_gbufNormalSRV = g_gbufDepthSRV = UINT_MAX;
 }
 
 void Transition(ID3D12GraphicsCommandList* cmd,
