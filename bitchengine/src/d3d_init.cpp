@@ -87,8 +87,7 @@ void BuildEditorUI()
             ImGui::Separator();
             if (ImGui::Button("Add Cube")) {
                 UINT cube = CreateCubeMeshGPU();
-                UINT tex = 0u;
-                Scene_AddEntity(cube, tex, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
+                Scene_AddEntity(cube, g_texDefault, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
             }
 
             if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size()) {
@@ -854,7 +853,6 @@ auto dump = [](UINT id) {
 
 void DX_LoadAssets()
 {
-
     UINT texDefault = RegisterTextureFromFile(L"assets\\textures\\default_white.png");
     UINT texError = RegisterTextureFromFile(L"assets\\textures\\error_tex.png");
 
@@ -863,6 +861,7 @@ void DX_LoadAssets()
     UINT texArsen = RegisterTextureFromFile(L"assets\\textures\\markaryan_diffuse.png");
 
     g_texFallbackId = texError;
+    g_texDefault = texDefault;
 
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
     UINT meshBodganov = RegisterOBJ(L"assets\\models\\bogdanov.obj");
@@ -915,6 +914,22 @@ void DX_LoadTerrain()
         nullptr, IID_PPV_ARGS(&g_cbTerrainTiles)));
 
     HR(g_cbTerrainTiles->Map(0, nullptr, (void**)&g_cbTerrainTilesPtr));
+}
+
+void DX_AutoLoadScene()
+{
+    const wchar_t* kAutoScene = L"assets\\scenes\\autosave.scene";
+    if (FileExistsW(kAutoScene)) {
+        g_entities.clear();
+        if (!LoadScene(kAutoScene)) {
+            OutputDebugStringA("Auto-load scene failed at startup\n");
+        }
+    }
+    else {
+        if (!SaveScene(kAutoScene)) {
+            OutputDebugStringA("Auto-save default scene failed at startup\n");
+        }
+    }
 }
 
 
@@ -1012,7 +1027,9 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     DX_CreateFrameCmdObjects();
 
     DX_LoadTerrain();
-    DX_LoadAssets();    
+    DX_LoadAssets(); 
+    DX_AutoLoadScene();
+
     DX_CreateRootSigAndPSO();
     DX_InitCamera(w, h);
 

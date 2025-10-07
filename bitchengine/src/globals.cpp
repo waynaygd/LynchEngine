@@ -93,6 +93,7 @@ uint8_t* g_cbTerrainTilesPtr = nullptr;
 UINT g_cbTerrainStride = 0;
 
 UINT g_texFallbackId = 0;
+UINT g_texDefault = 0;
 
 ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;
 UINT g_gbufRTVInc = 0;

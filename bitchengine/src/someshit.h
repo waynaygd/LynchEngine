@@ -148,6 +148,7 @@ UINT RegisterOBJ(const std::wstring& path);
 UINT CreateCubeMeshGPU(); 
 
 extern UINT g_texFallbackId;
+extern UINT g_texDefault;
 
 extern ComPtr<ID3D12DescriptorHeap> g_gbufRTVHeap;
 extern UINT g_gbufRTVInc;

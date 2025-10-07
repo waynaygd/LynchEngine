@@ -33,6 +33,8 @@ void DX_InitCamera(UINT w, UINT h);
 void DX_LoadAssets(); 
 void DX_LoadTerrain();
 
+void DX_AutoLoadScene();
+
 
 void InitD3D12(HWND hWnd, UINT w, UINT h);
 

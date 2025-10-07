@@ -336,6 +336,12 @@ UINT CreateCubeMeshGPU()
     mesh.ibv.Format = DXGI_FORMAT_R16_UINT;
     mesh.ibv.SizeInBytes = ibBytes;
 
+    Submesh sm{};
+    sm.indexOffset = 0;
+    sm.indexCount = _countof(idx);
+    sm.materialId = UINT(-1); 
+    mesh.subsets.push_back(sm);
+
     UINT id = (UINT)g_meshes.size();
     g_meshes.emplace_back(std::move(mesh));
 

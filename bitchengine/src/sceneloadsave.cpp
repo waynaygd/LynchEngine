@@ -104,3 +104,8 @@ bool LoadScene(const std::wstring& path)
     }
     return true;
 }
+
+bool FileExistsW(const wchar_t* path) {
+    DWORD a = GetFileAttributesW(path);
+    return (a != INVALID_FILE_ATTRIBUTES) && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
