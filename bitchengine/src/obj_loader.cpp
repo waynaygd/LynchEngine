@@ -15,19 +15,53 @@ static std::string Narrow(const std::wstring& w) {
     return s;
 }
 
+static std::string ShortAnsiPathFromWide(const std::wstring& wpath)
+{
+    wchar_t shortW[MAX_PATH];
+    DWORD n = GetShortPathNameW(wpath.c_str(), shortW, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) {
+        int len = WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string s(len ? len - 1 : 0, '\0');
+        if (len) WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, s.data(), len, nullptr, nullptr);
+        return s;
+    }
+    int len = WideCharToMultiByte(CP_ACP, 0, shortW, -1, nullptr, 0, nullptr, nullptr);
+    std::string s(len ? len - 1 : 0, '\0');
+    if (len) WideCharToMultiByte(CP_ACP, 0, shortW, -1, s.data(), len, nullptr, nullptr);
+    return s;
+}
+
+static std::wstring Utf8ToWide(const std::string& s)
+{
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    std::wstring w(len ? len - 1 : 0, L'\0');
+    if (len) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), len);
+    return w;
+}
+
 bool LoadOBJToGPU(const std::wstring& pathW,
     ID3D12Device* device,
     ID3D12GraphicsCommandList* uploadCmd,
     MeshGPU& out)
 {
     using namespace DirectX;
+    namespace fs = std::filesystem;
+
+    // База путей (wide) для последующей загрузки текстур
+    fs::path objPath = pathW;
+    fs::path baseDir = objPath.parent_path();
+
+    // Короткие ASCII-пути для tinyobj/ifstream
+    const std::string objShortA = ShortAnsiPathFromWide(objPath.wstring());
+    const std::string baseShortA = ShortAnsiPathFromWide(baseDir.wstring());
 
     tinyobj::ObjReaderConfig cfg;
-    cfg.mtl_search_path = "";  
     cfg.triangulate = true;
+    cfg.mtl_search_path = baseShortA; // пусть .mtl ищется рядом
 
     tinyobj::ObjReader reader;
-    if (!reader.ParseFromFile(Narrow(pathW), cfg)) {
+    if (!reader.ParseFromFile(objShortA, cfg)) {
         OutputDebugStringA(reader.Error().c_str());
         return false;
     }
@@ -42,23 +76,22 @@ bool LoadOBJToGPU(const std::wstring& pathW,
     out.materialsTexId.clear();
     out.materialsTexId.resize(std::max<size_t>(1, materials.size()), UINT(-1));
 
-    std::filesystem::path objPath = pathW;
-    std::filesystem::path baseDir = objPath.parent_path();
-
+    // ===== Загрузка диффузных текстур из материалов (UTF-8 -> wide) =====
     for (size_t mi = 0; mi < materials.size(); ++mi) {
         const auto& m = materials[mi];
         if (!m.diffuse_texname.empty()) {
-            std::filesystem::path texRel = std::filesystem::path(m.diffuse_texname).make_preferred();
-            std::filesystem::path texAbs = baseDir / texRel;
+            // имя из .mtl — UTF-8; строим абсолютный wide-путь корректно
+            fs::path texAbs = baseDir / fs::path(Utf8ToWide(m.diffuse_texname));
             try {
                 out.materialsTexId[mi] = RegisterTexture_OnCmd(texAbs.wstring(), uploadCmd);
             }
             catch (...) {
-                OutputDebugStringA(("Failed to load material texture: " + m.diffuse_texname + "\n").c_str());
+                OutputDebugStringW((L"Failed to load material texture: " + texAbs.wstring() + L"\n").c_str());
             }
         }
     }
 
+    // ===== Ниже — твой исходный код построения вершин/индексов/сабсетов =====
     std::vector<VertexOBJ> vertices;
     vertices.reserve(1 << 16);
 
@@ -90,18 +123,13 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             v.ny = attrib.normals[3 * idx.normal_index + 1];
             v.nz = attrib.normals[3 * idx.normal_index + 2];
         }
-        else {
-            v.nx = v.ny = v.nz = 0.0f;
-        }
+        else { v.nx = v.ny = v.nz = 0.0f; }
 
-        // uv
         if (idx.texcoord_index >= 0 && !attrib.texcoords.empty()) {
             v.u = attrib.texcoords[2 * idx.texcoord_index + 0];
             v.v = 1.0f - attrib.texcoords[2 * idx.texcoord_index + 1];
         }
-        else {
-            v.u = v.v = 0.0f;
-        }
+        else { v.u = v.v = 0.0f; }
 
         uint32_t newIdx = (uint32_t)vertices.size();
         vertices.push_back(v);
@@ -116,8 +144,8 @@ bool LoadOBJToGPU(const std::wstring& pathW,
 
     for (const auto& shape : shapes)
     {
-        const auto& ids = shape.mesh.material_ids;        
-        const auto& fv = shape.mesh.num_face_vertices;    
+        const auto& ids = shape.mesh.material_ids;
+        const auto& fv = shape.mesh.num_face_vertices;
         const auto& idx = shape.mesh.indices;
 
         size_t triBase = 0;
@@ -134,7 +162,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             dst.push_back(i0); dst.push_back(i1); dst.push_back(i2);
 
             indicesAll.push_back(i0); indicesAll.push_back(i1); indicesAll.push_back(i2);
-
             triBase += faceVerts;
         }
     }
@@ -152,9 +179,7 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             XMVECTOR p2 = XMVectorSet(vertices[i2].px, vertices[i2].py, vertices[i2].pz, 0);
             XMVECTOR fn = XMVector3Normalize(XMVector3Cross(p1 - p0, p2 - p0));
             XMFLOAT3 f; XMStoreFloat3(&f, fn);
-            for (uint32_t ii : { i0, i1, i2 }) {
-                vertices[ii].nx += f.x; vertices[ii].ny += f.y; vertices[ii].nz += f.z;
-            }
+            for (uint32_t ii : { i0, i1, i2 }) { vertices[ii].nx += f.x; vertices[ii].ny += f.y; vertices[ii].nz += f.z; }
         }
         for (auto& v : vertices) {
             XMVECTOR n = XMVector3Normalize(XMVectorSet(v.nx, v.ny, v.nz, 0));
@@ -218,6 +243,32 @@ bool LoadOBJToGPU(const std::wstring& pathW,
 
     out.indexCount = (UINT)indices32.size();
     return true;
+}
+
+bool WinOpenFileDialogOBJ(std::wstring& outPath)
+{
+    wchar_t fileBuf[MAX_PATH] = L"";
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = nullptr; // можно передать окно, если у тебя есть HWND
+    ofn.lpstrFile = fileBuf;
+    ofn.nMaxFile = MAX_PATH;
+
+    // Фильтр: "OBJ files (*.obj)\0*.obj\0All files (*.*)\0*.*\0\0"
+    static const wchar_t filter[] =
+        L"OBJ files (*.obj)\0*.obj\0All files (*.*)\0*.*\0\0";
+    ofn.lpstrFilter = filter;
+    ofn.nFilterIndex = 1;
+
+    // Начальная папка (опционально)
+    // ofn.lpstrInitialDir = L"assets\\meshes";
+
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
+    if (GetOpenFileNameW(&ofn)) {
+        outPath = fileBuf;
+        return true;
+    }
+    return false; // cancel или ошибка
 }
 
 

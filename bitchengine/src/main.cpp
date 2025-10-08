@@ -59,57 +59,53 @@ void RenderFrame()
 
 	for (const Entity& e : g_entities)
 	{
+		if (e.meshId >= g_meshes.size()) continue;
 		const MeshGPU& m = g_meshes[e.meshId];
-		const TextureGPU& t = g_textures[e.texId];
 
 		XMMATRIX S = XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z);
 		XMMATRIX Rx = XMMatrixRotationX(XMConvertToRadians(e.rotDeg.x));
 		XMMATRIX Ry = XMMatrixRotationY(XMConvertToRadians(e.rotDeg.y));
 		XMMATRIX Rz = XMMatrixRotationZ(XMConvertToRadians(e.rotDeg.z));
 		XMMATRIX T = XMMatrixTranslation(e.pos.x, e.pos.y, e.pos.z);
-
 		XMMATRIX M = S * Rx * Ry * Rz * T;
-
 		XMMATRIX MIT = XMMatrixTranspose(XMMatrixInverse(nullptr, M));
 
 		CBPerObject c{};
 		XMStoreFloat4x4(&c.M, XMMatrixTranspose(M));
 		XMStoreFloat4x4(&c.V, XMMatrixTranspose(V));
 		XMStoreFloat4x4(&c.P, XMMatrixTranspose(P));
-		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT)); 
+		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));
 		c.uvMul = e.uvMul;
 
-		if (drawIdx >= g_cbMaxPerFrame) { }
+		if (drawIdx >= g_cbMaxPerFrame) break; 
 		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
-
 		D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
 		g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
-
-		g_cmdList->SetGraphicsRootDescriptorTable(1, t.gpu);
 
 		g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
 		g_cmdList->IASetIndexBuffer(&m.ibv);
 
-		auto ResolveTexId = [&](const MeshGPU& m, const Submesh& sm, UINT entityFallback)->UINT {
-			UINT tid = UINT(-1);
-
-			if (sm.materialId != UINT(-1) && sm.materialId < m.materialsTexId.size())
-				tid = m.materialsTexId[sm.materialId];
-
-			if (tid != UINT(-1) && tid < g_textures.size())
-				return tid;
-
-			if (entityFallback != UINT(-1) && entityFallback < g_textures.size())
-				return entityFallback;
-
+		auto ResolveTexId = [&](const Submesh* psm, UINT entityFallback)->UINT {
+			if (psm && psm->materialId != UINT(-1) && psm->materialId < m.materialsTexId.size()) {
+				UINT t = m.materialsTexId[psm->materialId];
+				if (t != UINT(-1) && t < g_textures.size()) return t;
+			}
+			if (entityFallback != UINT(-1) && entityFallback < g_textures.size()) return entityFallback;
 			return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
 			};
 
-		for (const Submesh& sm : m.subsets)
-		{
-			const UINT texId = ResolveTexId(m, sm, e.texId);
+		if (m.subsets.empty()) {
+
+			UINT texId = ResolveTexId(nullptr, e.texId);
 			g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
-			g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+			g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
+		}
+		else {
+			for (const Submesh& sm : m.subsets) {
+				UINT texId = ResolveTexId(&sm, e.texId);
+				g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
+				g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+			}
 		}
 
 		++drawIdx;
@@ -494,13 +490,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		}
 		break;
 	}
-	case WM_MOUSEWHEEL:
-	{
-		int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-		g_cam.fovY = std::clamp(g_cam.fovY - float(delta) * 0.0005f, XM_PI / 12.0f, XM_PI / 1.2f);
-		g_cam.SetLens(g_cam.fovY, g_cam.aspect, g_cam.zn, g_cam.zf);
-		return 0;
-	}
 
 	}
 	return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -520,7 +509,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 	wc.lpszClassName = kClassName;
 	RegisterClassExW(&wc);
 
-	RECT rc{ 0,0,1280,720 };
+	RECT rc{ 0,0,1600,900 };
 	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, false);
 
 	g_hWnd = CreateWindowExW(

@@ -23,7 +23,7 @@ struct LightGPU {
 
 static_assert(sizeof(LightGPU) % 16 == 0, "LightGPU must be 16B aligned");
 
-constexpr uint32_t MAX_LIGHTS = 16;
+constexpr uint32_t MAX_LIGHTS = 256;
 
 struct CBLighting {
     XMFLOAT3 camPosWS; float debugMode;

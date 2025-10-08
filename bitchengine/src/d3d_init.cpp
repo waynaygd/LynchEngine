@@ -90,6 +90,27 @@ void BuildEditorUI()
                 Scene_AddEntity(cube, g_texDefault, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
             }
 
+            ImGui::Separator();
+            if (ImGui::Button("Load OBJ")) {
+                std::wstring pathW;
+                if (WinOpenFileDialogOBJ(pathW)) {
+                    try {
+                        UINT meshId = RegisterOBJ(pathW);
+
+                        Entity e{};
+                        e.meshId = meshId;
+                        e.texId = g_texDefault;
+                        e.pos = { 0,0,0 };
+                        e.rotDeg = { 0,0,0 };
+                        e.scale = { 1,1,1 };
+                        g_entities.push_back(e);
+                    }
+                    catch (const std::exception& ex) {
+                        OutputDebugStringA((std::string("OBJ load failed: ") + ex.what() + "\n").c_str());
+                    }
+                }
+            }
+
             if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size()) {
                 Entity& e = g_entities[g_selectedEntity];
                 ImGui::Text("Transform");
