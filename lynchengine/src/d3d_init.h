@@ -1,6 +1,6 @@
 ﻿// d3d_init.h
 #pragma once
-#include "someshit.h"
+#include "someparams.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx12.h"
@@ -60,3 +60,6 @@ void Transition(ID3D12GraphicsCommandList* cmd,
 
 void CreatePerObjectCB(UINT maxPerFrame);
 void CreateTerrainCB();
+
+XMMATRIX MakeDirLightVP(XMVECTOR lightDir, XMFLOAT3 sceneCenter, float sceneHalf);
+

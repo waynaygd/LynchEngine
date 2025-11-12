@@ -464,7 +464,7 @@ void CreateLightingRSandPSO()
 {
     D3D12_DESCRIPTOR_RANGE range{};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 3;     
+    range.NumDescriptors = 4;     
     range.BaseShaderRegister = 0;
     range.RegisterSpace = 0;
     range.OffsetInDescriptorsFromTableStart = 0;
@@ -476,7 +476,7 @@ void CreateLightingRSandPSO()
     rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rp[1].Descriptor.ShaderRegister = 1;
+    rp[1].Descriptor.ShaderRegister = 0;    // b0 !
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC sampLin{};
@@ -998,6 +998,63 @@ void CreateTerrainCB()
     HR(g_cbScene->Map(0, nullptr, (void**)&g_cbScenePtr));
 }
 
+void CreateShadowMap2D(ID3D12Device* dev, ShadowMap2D& sm, D3D12_CPU_DESCRIPTOR_HANDLE dsvCPU, D3D12_CPU_DESCRIPTOR_HANDLE srvCPU)
+{
+    sm.dsv = dsvCPU; // если у тебя свой менеджер — подставь SRV_Alloc()/DSV_Alloc() и т.п.
+    sm.srv = srvCPU;
+
+    // Ресурс
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = sm.width;
+    desc.Height = sm.height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = sm.resFormat; // R32_TYPELESS
+    desc.SampleDesc = { 1, 0 };
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE clear{};
+    clear.Format = sm.dsvFormat;
+    clear.DepthStencil = { 1.0f, 0 };
+
+    CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
+    HR(dev->CreateCommittedResource(
+        &hp, D3D12_HEAP_FLAG_NONE, &desc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear,
+        IID_PPV_ARGS(&sm.tex)));
+
+    // DSV
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvd{};
+    dsvd.Format = sm.dsvFormat; // D32_FLOAT
+    dsvd.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dev->CreateDepthStencilView(sm.tex.Get(), &dsvd, sm.dsv);
+
+    // SRV (как R32_FLOAT)
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvd{};
+    srvd.Format = sm.srvFormat; // R32_FLOAT
+    srvd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvd.Texture2D.MipLevels = 1;
+    srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    dev->CreateShaderResourceView(sm.tex.Get(), &srvd, sm.srv);
+
+    // Вьюпорт и сиссор
+    sm.viewport = { 0.0f, 0.0f, (float)sm.width, (float)sm.height, 0.0f, 1.0f };
+    sm.scissor = { 0, 0, (LONG)sm.width, (LONG)sm.height };
+}
+
+XMMATRIX MakeDirLightVP(XMVECTOR lightDir, XMFLOAT3 sceneCenter, float sceneHalf)
+{
+    XMVECTOR pos = XMVectorSet(sceneCenter.x, sceneCenter.y, sceneCenter.z, 1.0f) - lightDir * (sceneHalf * 2.0f);
+    XMVECTOR target = XMVectorSet(sceneCenter.x, sceneCenter.y, sceneCenter.z, 1.0f);
+    XMVECTOR up = XMVectorSet(0, 1, 0, 0);
+
+    XMMATRIX V = XMMatrixLookAtLH(pos, target, up);
+    XMMATRIX P = XMMatrixOrthographicLH(sceneHalf * 2, sceneHalf * 2, 0.1f, sceneHalf * 4.0f);
+    return V * P;
+}
+
+
 template<class T>
 static void CreateUploadCB(ComPtr<ID3D12Resource>& cb, uint8_t*& mappedPtr) {
     CD3DX12_HEAP_PROPERTIES heapUpload(D3D12_HEAP_TYPE_UPLOAD);
@@ -1025,9 +1082,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     DX_CreateDepth(w, h);
     DX_CreateGBuffer(w, h);
     CreateGBufferRSandPSO();
-
     CreateTerrainRSandPSO();
-
     CreateLightingRSandPSO();
 
     CreatePerObjectCB(1024);

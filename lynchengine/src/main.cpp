@@ -28,9 +28,19 @@ void RenderFrame()
 
 	XMMATRIX VP = XMMatrixMultiply(V, P);
 
+	// те же матрицы, что были в shadow-pass
+	XMFLOAT3 dirF{ -0.4f,-1.0f,-0.2f };
+	for (auto& A : g_lightsAuthor) if (A.type == LT_Dir) { dirF = A.dirW; break; }
+	XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&dirF));
+	XMMATRIX lightVP = MakeDirLightVP(lightDir, { 0,0,0 }, 50.0f);
+
+	{
+		if (g_lightsAuthor.empty())
+			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
+	}
+
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
-
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE mrt[2] = { g_gbufRTV[0], g_gbufRTV[1] };
@@ -40,21 +50,18 @@ void RenderFrame()
 	g_cmdList->RSSetViewports(1, &g_viewport);
 	g_cmdList->RSSetScissorRects(1, &g_scissor);
 
-	const float c0[4] = { 0, 0, 0, 1 }; 
-	const float c1[4] = { 0, 0, 1, 1 }; 
+	const float c0[4] = { 0, 0, 0, 1 };
+	const float c1[4] = { 0, 0, 1, 1 };
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[0], c0, 0, nullptr);
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[1], c1, 0, nullptr);
 	g_cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
 	g_cmdList->SetPipelineState(g_psoGBuffer.Get());
-
 	{
 		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 		g_cmdList->SetDescriptorHeaps(2, heaps);
 	}
-
-	using namespace DirectX;
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	for (const Entity& e : g_entities)
@@ -77,7 +84,7 @@ void RenderFrame()
 		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));
 		c.uvMul = e.uvMul;
 
-		if (drawIdx >= g_cbMaxPerFrame) break; 
+		if (drawIdx >= g_cbMaxPerFrame) break;
 		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
 		D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
 		g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
@@ -95,7 +102,6 @@ void RenderFrame()
 			};
 
 		if (m.subsets.empty()) {
-
 			UINT texId = ResolveTexId(nullptr, e.texId);
 			g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
 			g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
@@ -107,9 +113,9 @@ void RenderFrame()
 				g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
 			}
 		}
-
 		++drawIdx;
 	}
+
 	if (!g_terrainonetile) {
 		if (!g_nodes.empty() && g_root < g_nodes.size())
 		{
@@ -245,7 +251,6 @@ void RenderFrame()
 
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -262,7 +267,6 @@ void RenderFrame()
 
 	g_cmdList->SetGraphicsRootSignature(g_rsLighting.Get());
 	g_cmdList->SetPipelineState(g_psoLighting.Get());
-
 	{
 		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 		g_cmdList->SetDescriptorHeaps(2, heaps);
@@ -270,51 +274,35 @@ void RenderFrame()
 
 	g_cmdList->SetGraphicsRootDescriptorTable(0, SRV_GPU(g_gbufAlbedoSRV));
 
-	if (g_lightsAuthor.empty()) { 
-		g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
-	}
-
 	CBLighting L{};
 	L.debugMode = float(g_gbufDebugMode);
-	
+	XMStoreFloat4x4(&L.dirLightVP, XMMatrixTranspose(lightVP));
+
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
-
-	for (auto& A : g_lightsAuthor) {
-		if (A.type != LT_Point) {
-			XMVECTOR d = XMVector3Normalize(XMLoadFloat3(&A.dirW));
-			XMStoreFloat3(&A.dirW, d);
-		}
-	}
-
-	for (uint32_t i = 0; i < n; ++i) {
+	for (auto& A : g_lightsAuthor) if (A.type != LT_Point)
+		XMStoreFloat3(&A.dirW, XMVector3Normalize(XMLoadFloat3(&A.dirW)));
+	for (uint32_t i = 0; i < n; ++i)
+	{
 		const auto& A = g_lightsAuthor[i];
 		LightGPU G{};
 		G.type = (uint32_t)A.type;
 		G.color = A.color;
 		G.intensity = A.intensity;
-
-		XMVECTOR pW = XMLoadFloat3(&A.posW);
-		XMVECTOR dW = XMLoadFloat3(&A.dirW);
-
-		XMStoreFloat3(&G.posW, pW);                        
-		XMStoreFloat3(&G.dirW, XMVector3Normalize(dW)); 
-
+		XMStoreFloat3(&G.posW, XMLoadFloat3(&A.posW));
+		XMStoreFloat3(&G.dirW, XMVector3Normalize(XMLoadFloat3(&A.dirW)));
 		G.radius = A.radius;
 		G.cosInner = cosf(XMConvertToRadians(A.innerDeg));
 		G.cosOuter = cosf(XMConvertToRadians(A.outerDeg));
-
 		L.lights[i] = G;
 	}
 	L.lightCount = n;
-	L.camPosWS = g_cam.pos;          
+	L.camPosWS = g_cam.pos;
 	L.zNearFar = { g_cam.zn, g_cam.zf };
-
 	XMMATRIX invVP = XMMatrixInverse(nullptr, V * P);
-	XMStoreFloat4x4(&L.invViewProj, invVP); 
+	XMStoreFloat4x4(&L.invViewProj, invVP);
 
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
-
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
@@ -340,7 +328,6 @@ void RenderFrame()
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList.Get());
 	}
 
-
 	auto bbToPresent = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -359,7 +346,6 @@ void RenderFrame()
 	}
 	g_frameIndex = g_swapChain->GetCurrentBackBufferIndex();
 }
-
 
 
 
@@ -496,8 +482,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
-	const wchar_t* kClassName = L"BitchEngine";
-	wchar_t window_name[25] = L"bitchengine FPS: ";
+	const wchar_t* kClassName = L"LynchEngine";
+	wchar_t window_name[25] = L"LynchEngine FPS: ";
 
 	CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
@@ -509,7 +495,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 	wc.lpszClassName = kClassName;
 	RegisterClassExW(&wc);
 
-	RECT rc{ 0,0,1600,900 };
+	RECT rc{ 0,0,1280,720 };
 	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, false);
 
 	g_hWnd = CreateWindowExW(
@@ -555,7 +541,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 			frameCounter = 0;
 			accTitle = 0.0;
 
-			std::wstring title = std::format(L"bitchengine FPS: {}", (int)std::round(fpsShown));
+			std::wstring title = std::format(L"LynchEngine FPS: {}", (int)std::round(fpsShown));
 			SetWindowTextW(g_hWnd, title.c_str());
 		}
 		RenderFrame();

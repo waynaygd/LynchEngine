@@ -4,8 +4,6 @@
 #define LIGHT_TYPE_POINT   1
 #define LIGHT_TYPE_SPOT    2
 
-// 1 = нормали в gNormal упакованы в [0..1] и требуют *2-1
-// 0 = нормали уже в [-1..1] (рекомендуется при RGBA16F)
 #define NORMAL_IS_PACKED   1
 
 struct Light
@@ -22,7 +20,7 @@ struct Light
     float _pad1; 
 };
 
-cbuffer CBLighting : register(b1)
+cbuffer CBLighting : register(b0)
 {
     float3 camPosWS;
     float debugMode;
@@ -31,12 +29,14 @@ cbuffer CBLighting : register(b1)
     uint lightCount;
     float3 _padB;
     float4x4 invViewProj;
+    float4x4 dirLightVP;
     Light lights[MAX_LIGHTS]; 
 };
 
 Texture2D gAlbedo : register(t0);
 Texture2D gNormal : register(t1);
 Texture2D gDepth : register(t2);
+Texture2D gShadowDir : register(t3);
 
 SamplerState gSamp : register(s0);
 SamplerState gSampZ : register(s1);
@@ -102,6 +102,7 @@ float3 ShadeSpot(in Light L, float3 P, float3 N, float3 albedo)
     return albedo * L.color * (L.intensity * ndl * atten * spot);
 }
 
+
 struct PSIn
 {
     float4 posH : SV_Position;
@@ -112,12 +113,12 @@ float4 DebugView(float debugMode, float2 uv)
 {
     if (debugMode >= 1.0 && debugMode < 2.0)
     { 
-        return float4(gAlbedo.Sample(gSamp, uv).rgb, 1.0);
+        return float4(gAlbedo.Sample(gSamp, uv).rgb, 1);
     }
     if (debugMode >= 2.0 && debugMode < 3.0)
     { 
         float3 n = LoadNormalWS(uv);
-        return float4(n * 0.5 + 0.5, 1.0);
+        return float4(n * 0.5 + 0.5, 1.0);  
     }
     if (debugMode >= 3.0 && debugMode < 4.0)
     { 
@@ -151,7 +152,9 @@ float4 main(PSIn i) : SV_Target
     {
         Light L = lights[k];
         if (L.type == LIGHT_TYPE_DIR)
+        {
             Lsum += ShadeDirectional(L, N, albedo);
+        }
         else if (L.type == LIGHT_TYPE_POINT)
             Lsum += ShadePoint(L, P, N, albedo);
         else

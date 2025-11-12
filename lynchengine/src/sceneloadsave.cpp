@@ -1,5 +1,5 @@
 #include "sceneloadsave.h"
-#include "someshit.h"
+#include "someparams.h"
 
 bool SaveScene(const std::wstring& path)
 {

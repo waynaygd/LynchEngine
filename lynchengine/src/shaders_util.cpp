@@ -1,4 +1,4 @@
-#include "someshit.h"
+#include "someparams.h"
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
 

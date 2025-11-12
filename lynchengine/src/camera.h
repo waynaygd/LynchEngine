@@ -69,6 +69,12 @@ struct Camera {
         return XMVector3Normalize(XMVector3Cross(U, F));
     }
 
+    XMVECTOR Up() const {
+        XMVECTOR F = Forward();
+        XMVECTOR R = Right();
+        return XMVector3Normalize(XMVector3Cross(F, R));
+    }
+
     XMMATRIX View() const { return XMLoadFloat4x4(&view); }
     XMMATRIX Proj() const { return XMLoadFloat4x4(&proj); }
 };
