@@ -1,6 +1,6 @@
 #include "terrain.h"
 #include <gpu_upload.h>
-#include "someshit.h"
+#include "someparams.h"
 
 std::vector<TileRes> g_tiles;
 std::vector<QNode> g_nodes;

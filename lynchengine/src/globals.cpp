@@ -1,4 +1,4 @@
-#include "someshit.h"
+#include "someparams.h"
 
 HWND g_hWnd = nullptr;
 ComPtr<IDXGIFactory7>        g_factory;
