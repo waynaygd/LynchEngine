@@ -17,10 +17,12 @@ void DX_CreateGBuffer(UINT w, UINT h);
 void CreateGBufferRSandPSO();
 void CreateLightingRSandPSO();
 void CreateTerrainRSandPSO();
+void CreateTAARSandPSO();
 void DX_CreateDepth(UINT w, UINT h);
 void DX_CreateSRVHeap(UINT numDescriptors = 1);
 void DX_CreateImGuiHeap();
 void DX_CreateFrameCmdObjects();
+void DX_CreateLightingColorRT(UINT w, UINT h);
 void CreateCB();
 
 void DX_BeginUpload();

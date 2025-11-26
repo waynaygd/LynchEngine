@@ -243,6 +243,19 @@ extern int minL;
 extern int maxL;
 extern int drawnodes_size;
 
+// taa
+extern ComPtr<ID3D12Resource> g_lightingColor;
+extern D3D12_CPU_DESCRIPTOR_HANDLE g_lightingColorRTV;
+extern ComPtr<ID3D12DescriptorHeap> g_lightingRTVHeap;
+extern UINT g_lightingColorSRV;
+extern D3D12_RESOURCE_STATES g_lightingColorState;
+
+extern ComPtr<ID3D12RootSignature> g_rsTAA;
+extern ComPtr<ID3D12PipelineState> g_psoTAA;
+
+extern XMFLOAT4X4 g_prevViewProj;
+extern bool g_prevViewProjValid;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();

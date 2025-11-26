@@ -77,7 +77,6 @@ void BuildEditorUI()
 
             ImGui::Separator();
 
-            // список сущностей
             for (int i = 0; i < (int)g_entities.size(); ++i) {
                 std::string label = "Entity " + std::to_string(i);
                 if (ImGui::Selectable(label.c_str(), g_selectedEntity == i))
@@ -476,7 +475,7 @@ void CreateLightingRSandPSO()
     rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rp[1].Descriptor.ShaderRegister = 0;    // b0 !
+    rp[1].Descriptor.ShaderRegister = 0; 
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC sampLin{};
@@ -520,7 +519,7 @@ void CreateLightingRSandPSO()
     auto rast = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     rast.CullMode = D3D12_CULL_MODE_NONE;
     pso.RasterizerState = rast;
-    D3D12_DEPTH_STENCIL_DESC ds{}; // OFF
+    D3D12_DEPTH_STENCIL_DESC ds{};
     ds.DepthEnable = FALSE; ds.StencilEnable = FALSE;
     pso.DepthStencilState = ds;
     pso.InputLayout = { nullptr, 0 }; 
@@ -599,13 +598,13 @@ void CreateTerrainRSandPSO()
     }
 
     D3D12_INPUT_ELEMENT_DESC ilBase[] = {
-    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uv
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 
     };
 
     D3D12_INPUT_ELEMENT_DESC ilSkirt[] = {
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uv
-        { "TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT,    0, 8,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // skirtK
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT,    0, 8,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
@@ -680,6 +679,77 @@ void CreateTerrainRSandPSO()
     HR(g_device->CreateGraphicsPipelineState(&pso_wireframe, IID_PPV_ARGS(&g_psoTerrainWF)));
 
 
+}
+
+void CreateTAARSandPSO()
+{
+    D3D12_DESCRIPTOR_RANGE range{};
+    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    range.NumDescriptors = 1;
+    range.BaseShaderRegister = 0; // t0
+    range.RegisterSpace = 0;
+    range.OffsetInDescriptorsFromTableStart = 0;
+
+    D3D12_ROOT_PARAMETER rp[1]{};
+    rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rp[0].DescriptorTable.NumDescriptorRanges = 1;
+    rp[0].DescriptorTable.pDescriptorRanges = &range;
+    rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_STATIC_SAMPLER_DESC samp{};
+    samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samp.ShaderRegister = 0; // s0
+    samp.RegisterSpace = 0;
+    samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_ROOT_SIGNATURE_DESC rs{};
+    rs.NumParameters = _countof(rp);
+    rs.pParameters = rp;
+    rs.NumStaticSamplers = 1;
+    rs.pStaticSamplers = &samp;
+    rs.Flags =
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS;
+
+    ComPtr<ID3DBlob> sig, err;
+    HR(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    if (err && err->GetBufferSize())
+        OutputDebugStringA((char*)err->GetBufferPointer());
+
+    HR(g_device->CreateRootSignature(
+        0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&g_rsTAA)));
+
+    auto vs = CompileShaderFromFile(L"shaders\\light_vs.hlsl", "main", "vs_5_1");
+    auto ps = CompileShaderFromFile(L"shaders\\taa_ps.hlsl", "main", "ps_5_1");
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+    pso.pRootSignature = g_rsTAA.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    pso.SampleMask = UINT_MAX;
+
+    auto rast = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    rast.CullMode = D3D12_CULL_MODE_NONE;
+    pso.RasterizerState = rast;
+
+    D3D12_DEPTH_STENCIL_DESC ds{};
+    ds.DepthEnable = FALSE;
+    ds.StencilEnable = FALSE;
+    pso.DepthStencilState = ds;
+
+    pso.InputLayout = { nullptr, 0 };
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = g_backBufferFormat;
+    pso.SampleDesc = { 1, 0 };
+
+    HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTAA)));
 }
 
 const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R32_TYPELESS;
@@ -1000,17 +1070,16 @@ void CreateTerrainCB()
 
 void CreateShadowMap2D(ID3D12Device* dev, ShadowMap2D& sm, D3D12_CPU_DESCRIPTOR_HANDLE dsvCPU, D3D12_CPU_DESCRIPTOR_HANDLE srvCPU)
 {
-    sm.dsv = dsvCPU; // если у тебя свой менеджер — подставь SRV_Alloc()/DSV_Alloc() и т.п.
+    sm.dsv = dsvCPU;
     sm.srv = srvCPU;
 
-    // Ресурс
     D3D12_RESOURCE_DESC desc = {};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     desc.Width = sm.width;
     desc.Height = sm.height;
     desc.DepthOrArraySize = 1;
     desc.MipLevels = 1;
-    desc.Format = sm.resFormat; // R32_TYPELESS
+    desc.Format = sm.resFormat;
     desc.SampleDesc = { 1, 0 };
     desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
@@ -1024,21 +1093,18 @@ void CreateShadowMap2D(ID3D12Device* dev, ShadowMap2D& sm, D3D12_CPU_DESCRIPTOR_
         D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear,
         IID_PPV_ARGS(&sm.tex)));
 
-    // DSV
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvd{};
-    dsvd.Format = sm.dsvFormat; // D32_FLOAT
+    dsvd.Format = sm.dsvFormat;
     dsvd.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dev->CreateDepthStencilView(sm.tex.Get(), &dsvd, sm.dsv);
 
-    // SRV (как R32_FLOAT)
     D3D12_SHADER_RESOURCE_VIEW_DESC srvd{};
-    srvd.Format = sm.srvFormat; // R32_FLOAT
+    srvd.Format = sm.srvFormat;
     srvd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvd.Texture2D.MipLevels = 1;
     srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     dev->CreateShaderResourceView(sm.tex.Get(), &srvd, sm.srv);
 
-    // Вьюпорт и сиссор
     sm.viewport = { 0.0f, 0.0f, (float)sm.width, (float)sm.height, 0.0f, 1.0f };
     sm.scissor = { 0, 0, (LONG)sm.width, (LONG)sm.height };
 }
@@ -1081,9 +1147,11 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     DX_CreateDepth(w, h);
     DX_CreateGBuffer(w, h);
+    DX_CreateLightingColorRT(w, h);
     CreateGBufferRSandPSO();
     CreateTerrainRSandPSO();
     CreateLightingRSandPSO();
+    CreateTAARSandPSO();
 
     CreatePerObjectCB(1024);
     CreateTerrainCB();
@@ -1174,6 +1242,10 @@ void DX_Resize(UINT w, UINT h)
 
     DX_DestroyGBuffer();
     DX_CreateGBuffer(w, h);
+
+    g_lightingColor.Reset();
+    g_lightingRTVHeap.Reset();
+    DX_CreateLightingColorRT(w, h);
 
     g_viewport = { 0.f, 0.f, float(w), float(h), 0.f, 1.f };
     g_scissor = { 0, 0, (LONG)w, (LONG)h };
@@ -1291,6 +1363,50 @@ void DX_FillSamplers()
     }
 }
 
+void DX_CreateLightingColorRT(UINT w, UINT h)
+{
+    const DXGI_FORMAT fmt = g_backBufferFormat;
+
+    CD3DX12_HEAP_PROPERTIES heapDefault(D3D12_HEAP_TYPE_DEFAULT);
+    auto desc = CD3DX12_RESOURCE_DESC::Tex2D(
+        fmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+
+    D3D12_CLEAR_VALUE cv{};
+    cv.Format = fmt;
+    cv.Color[0] = 0.06f;
+    cv.Color[1] = 0.06f;
+    cv.Color[2] = 0.08f;
+    cv.Color[3] = 1.0f;
+
+    HR(g_device->CreateCommittedResource(
+        &heapDefault, D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &cv,
+        IID_PPV_ARGS(&g_lightingColor)));
+
+    g_lightingColorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+
+    D3D12_DESCRIPTOR_HEAP_DESC rtvDesc{};
+    rtvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvDesc.NumDescriptors = 1;
+    rtvDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    HR(g_device->CreateDescriptorHeap(&rtvDesc, IID_PPV_ARGS(&g_lightingRTVHeap)));
+
+    g_lightingColorRTV = g_lightingRTVHeap->GetCPUDescriptorHandleForHeapStart();
+    g_device->CreateRenderTargetView(g_lightingColor.Get(), nullptr, g_lightingColorRTV);
+
+    UINT slot = SRV_Alloc();
+    g_lightingColorSRV = slot;
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.Format = fmt;
+    sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sd.Texture2D.MipLevels = 1;
+
+    g_device->CreateShaderResourceView(g_lightingColor.Get(), &sd, SRV_CPU(slot));
+}
 D3D12_GPU_DESCRIPTOR_HANDLE DX_GetSamplerHandle(int addrMode, int filterMode)
 {
     UINT idx = (UINT)(addrMode * 3 + filterMode);

@@ -28,7 +28,9 @@ void RenderFrame()
 
 	XMMATRIX VP = XMMatrixMultiply(V, P);
 
-	// те же матрицы, что были в shadow-pass
+	XMFLOAT4X4 currVP;
+	XMStoreFloat4x4(&currVP, XMMatrixTranspose(VP));
+
 	XMFLOAT3 dirF{ -0.4f,-1.0f,-0.2f };
 	for (auto& A : g_lightsAuthor) if (A.type == LT_Dir) { dirF = A.dirW; break; }
 	XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&dirF));
@@ -253,17 +255,13 @@ void RenderFrame()
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
-		g_backBuffers[g_frameIndex].Get(),
-		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	g_cmdList->ResourceBarrier(1, &bbToRT);
+	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
+		D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(
-		g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvInc);
-	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+	g_cmdList->OMSetRenderTargets(1, &g_lightingColorRTV, FALSE, nullptr);
 
-	const float clearBB[4] = { 0.06f, 0.06f, 0.08f, 1.0f };
-	g_cmdList->ClearRenderTargetView(rtv, clearBB, 0, nullptr);
+	const float clearLighting[4] = { 0.06f, 0.06f, 0.08f, 1.0f };
+	g_cmdList->ClearRenderTargetView(g_lightingColorRTV, clearLighting, 0, nullptr);
 
 	g_cmdList->SetGraphicsRootSignature(g_rsLighting.Get());
 	g_cmdList->SetPipelineState(g_psoLighting.Get());
@@ -298,6 +296,7 @@ void RenderFrame()
 	L.lightCount = n;
 	L.camPosWS = g_cam.pos;
 	L.zNearFar = { g_cam.zn, g_cam.zf };
+
 	XMMATRIX invVP = XMMatrixInverse(nullptr, V * P);
 	XMStoreFloat4x4(&L.invViewProj, invVP);
 
@@ -306,6 +305,27 @@ void RenderFrame()
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
+
+	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
+		D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+	auto bbToCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
+		g_backBuffers[g_frameIndex].Get(),
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	g_cmdList->ResourceBarrier(1, &bbToCopyDest);
+
+	g_cmdList->CopyResource(
+		g_backBuffers[g_frameIndex].Get(),
+		g_lightingColor.Get());
+
+	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
+		g_backBuffers[g_frameIndex].Get(),
+		D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_cmdList->ResourceBarrier(1, &bbToRT);
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(
+		g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvInc);
+	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 	
 	/**/
 	ImGui_ImplWin32_NewFrame();
@@ -333,6 +353,11 @@ void RenderFrame()
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	g_cmdList->ResourceBarrier(1, &bbToPresent);
 
+	{
+		g_prevViewProj = currVP;
+		g_prevViewProjValid = true;
+	}
+
 	HR(g_cmdList->Close());
 	ID3D12CommandList* lists[] = { g_cmdList.Get() };
 	g_cmdQueue->ExecuteCommandLists(1, lists);
@@ -346,8 +371,6 @@ void RenderFrame()
 	}
 	g_frameIndex = g_swapChain->GetCurrentBackBufferIndex();
 }
-
-
 
 void WaitForGPU() {
 	if (!g_fence || !g_cmdQueue) return;

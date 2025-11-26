@@ -163,5 +163,12 @@ int drawnodes_size;
 // taa
 ComPtr<ID3D12Resource> g_lightingColor;
 D3D12_CPU_DESCRIPTOR_HANDLE g_lightingColorRTV{};
+ComPtr<ID3D12DescriptorHeap> g_lightingRTVHeap;
 UINT g_lightingColorSRV = UINT_MAX;
 D3D12_RESOURCE_STATES g_lightingColorState = D3D12_RESOURCE_STATE_COMMON;
+
+ComPtr<ID3D12RootSignature> g_rsTAA;
+ComPtr<ID3D12PipelineState> g_psoTAA;
+
+XMFLOAT4X4 g_prevViewProj;
+bool g_prevViewProjValid = false;

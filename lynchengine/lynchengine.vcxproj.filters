@@ -137,6 +137,9 @@
     <Text Include="shaders\terrain_vs.hlsl">
       <Filter>Main Files\Shaders</Filter>
     </Text>
+    <Text Include="shaders\taa_ps.hlsl">
+      <Filter>Main Files\Shaders</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">
