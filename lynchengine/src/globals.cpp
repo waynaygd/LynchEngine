@@ -159,3 +159,9 @@ std::vector<ComPtr<ID3D12Resource>> g_pendingUploads;
 int leaves_count;
 int minL = 99, maxL = -1;
 int drawnodes_size;
+
+// taa
+ComPtr<ID3D12Resource> g_lightingColor;
+D3D12_CPU_DESCRIPTOR_HANDLE g_lightingColorRTV{};
+UINT g_lightingColorSRV = UINT_MAX;
+D3D12_RESOURCE_STATES g_lightingColorState = D3D12_RESOURCE_STATE_COMMON;
