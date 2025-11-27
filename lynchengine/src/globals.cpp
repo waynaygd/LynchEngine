@@ -170,5 +170,16 @@ D3D12_RESOURCE_STATES g_lightingColorState = D3D12_RESOURCE_STATE_COMMON;
 ComPtr<ID3D12RootSignature> g_rsTAA;
 ComPtr<ID3D12PipelineState> g_psoTAA;
 
+ComPtr<ID3D12Resource> g_taaHistory;
+UINT g_taaHistorySRV = UINT_MAX;
+D3D12_RESOURCE_STATES g_taaHistoryState = D3D12_RESOURCE_STATE_COMMON;
+
 XMFLOAT4X4 g_prevViewProj;
 bool g_prevViewProjValid = false;
+
+bool  g_taaEnabled = true;
+float g_taaAlpha = 0.1f;
+
+ComPtr<ID3D12Resource> g_cbTAA;
+uint8_t* g_cbTAAPtr = nullptr;
+UINT g_cbTAAStride = 256;

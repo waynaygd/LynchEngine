@@ -31,6 +31,7 @@ void DX_EndUploadAndFlush();
 void DX_CreateRootSigAndPSO();   
 void DX_InitCamera(UINT w, UINT h);
 
+void DX_CreateTAAHistoryRT(UINT w, UINT h);
 
 void DX_LoadAssets(); 
 void DX_LoadTerrain();

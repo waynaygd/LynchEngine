@@ -253,6 +253,27 @@ extern D3D12_RESOURCE_STATES g_lightingColorState;
 extern ComPtr<ID3D12RootSignature> g_rsTAA;
 extern ComPtr<ID3D12PipelineState> g_psoTAA;
 
+extern ComPtr<ID3D12Resource> g_taaHistory;
+extern UINT g_taaHistorySRV;
+extern D3D12_RESOURCE_STATES g_taaHistoryState;
+
+extern bool g_taaEnabled;
+extern float g_taaAlpha;
+
+extern ComPtr<ID3D12Resource> g_cbTAA;
+extern uint8_t* g_cbTAAPtr;
+extern UINT g_cbTAAStride;
+
+struct CBTAA_CPU
+{
+    DirectX::XMFLOAT4X4 currViewProj;
+    DirectX::XMFLOAT4X4 prevViewProj; 
+
+    DirectX::XMFLOAT2   jitter;   
+    float               alpha;        
+    float               enableTAA;
+};
+
 extern XMFLOAT4X4 g_prevViewProj;
 extern bool g_prevViewProjValid;
 

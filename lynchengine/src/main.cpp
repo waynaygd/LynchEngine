@@ -251,12 +251,17 @@ void RenderFrame()
 	g_cmdList->RSSetViewports(1, &g_viewport);
 	g_cmdList->RSSetScissorRects(1, &g_scissor);
 
+	// G-buffer и depth в SRV для lighting
 	for (int i = 0; i < GBUF_COUNT; ++i)
-		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i],
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
+	// g_lightingColor как RT
 	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
 		D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_lightingColorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
 	g_cmdList->OMSetRenderTargets(1, &g_lightingColorRTV, FALSE, nullptr);
 
@@ -306,28 +311,80 @@ void RenderFrame()
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
 
+	// После lighting: g_lightingColor → SRV, history → SRV
 	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
-		D3D12_RESOURCE_STATE_COPY_SOURCE);
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	g_lightingColorState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	auto bbToCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
-		g_backBuffers[g_frameIndex].Get(),
-		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
-	g_cmdList->ResourceBarrier(1, &bbToCopyDest);
+	Transition(g_cmdList.Get(), g_taaHistory.Get(), g_taaHistoryState,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	g_taaHistoryState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	g_cmdList->CopyResource(
-		g_backBuffers[g_frameIndex].Get(),
-		g_lightingColor.Get());
-
+	// Backbuffer: PRESENT → RENDER_TARGET для TAA-поста
 	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
-		D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	g_cmdList->ResourceBarrier(1, &bbToRT);
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(
 		g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvInc);
 	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-	
-	/**/
+
+	const float clearBB[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	g_cmdList->ClearRenderTargetView(rtv, clearBB, 0, nullptr);
+
+	// TAA-pass: g_lightingColor (t0) + g_taaHistory (t1) → backbuffer
+	g_cmdList->SetGraphicsRootSignature(g_rsTAA.Get());
+	g_cmdList->SetPipelineState(g_psoTAA.Get());
+
+	{
+		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
+		g_cmdList->SetDescriptorHeaps(2, heaps);
+	}
+
+	CBTAA_CPU cb{};
+
+	XMStoreFloat4x4(&cb.currViewProj, XMMatrixTranspose(V* P));
+
+	if (g_prevViewProjValid)
+		cb.prevViewProj = g_prevViewProj;
+	else
+		cb.prevViewProj = cb.currViewProj;
+
+	cb.jitter = { 0.0f, 0.0f };
+
+	cb.alpha = g_taaAlpha;    
+	cb.enableTAA = g_taaEnabled ? 1.0f : 0.0f;
+
+	std::memcpy(g_cbTAAPtr, &cb, sizeof(cb));
+
+	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTAA->GetGPUVirtualAddress());
+	g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(g_lightingColorSRV));
+
+	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	g_cmdList->DrawInstanced(3, 1, 0, 0);
+
+	auto bbToCopySrc = CD3DX12_RESOURCE_BARRIER::Transition(
+		g_backBuffers[g_frameIndex].Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_COPY_SOURCE);
+	g_cmdList->ResourceBarrier(1, &bbToCopySrc);
+
+	Transition(g_cmdList.Get(), g_taaHistory.Get(), g_taaHistoryState,
+		D3D12_RESOURCE_STATE_COPY_DEST);
+
+	g_cmdList->CopyResource(g_taaHistory.Get(), g_backBuffers[g_frameIndex].Get());
+
+	Transition(g_cmdList.Get(), g_taaHistory.Get(), g_taaHistoryState,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+	auto bbBackToRT = CD3DX12_RESOURCE_BARRIER::Transition(
+		g_backBuffers[g_frameIndex].Get(),
+		D3D12_RESOURCE_STATE_COPY_SOURCE,
+		D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_cmdList->ResourceBarrier(1, &bbBackToRT);
+	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+
 	ImGui_ImplWin32_NewFrame();
 	ImGui_ImplDX12_NewFrame();
 	ImGui::NewFrame();
