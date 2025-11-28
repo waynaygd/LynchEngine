@@ -178,7 +178,7 @@ XMFLOAT4X4 g_prevViewProj;
 bool g_prevViewProjValid = false;
 
 bool  g_taaEnabled = true;
-float g_taaAlpha = 0.1f;
+float g_taaAlpha = 0.8f;
 
 ComPtr<ID3D12Resource> g_cbTAA;
 uint8_t* g_cbTAAPtr = nullptr;

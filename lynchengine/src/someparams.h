@@ -172,7 +172,9 @@ struct CBPerObject {
     DirectX::XMFLOAT4X4 V;
     DirectX::XMFLOAT4X4 P;
     DirectX::XMFLOAT4X4 MIT;
-    float uvMul; float _pad[3];
+    float uvMul;
+    DirectX::XMFLOAT2 jitter;
+    float pad;
 };
 
 
@@ -268,6 +270,7 @@ struct CBTAA_CPU
 {
     DirectX::XMFLOAT4X4 currViewProj;
     DirectX::XMFLOAT4X4 prevViewProj; 
+    DirectX::XMFLOAT4X4 invCurrViewProj;
 
     DirectX::XMFLOAT2   jitter;   
     float               alpha;        

@@ -691,24 +691,41 @@ void CreateTerrainRSandPSO()
 
 void CreateTAARSandPSO()
 {
-    D3D12_DESCRIPTOR_RANGE range{};
-    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 2;       
-    range.BaseShaderRegister = 0;     
-    range.RegisterSpace = 0;
-    range.OffsetInDescriptorsFromTableStart = 0;
+    // range for current color + history (t0, t1)
+    D3D12_DESCRIPTOR_RANGE ranges[2]{};
 
-    D3D12_ROOT_PARAMETER rp[2]{};
+    ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    ranges[0].NumDescriptors = 2;          // t0, t1
+    ranges[0].BaseShaderRegister = 0;      // t0
+    ranges[0].RegisterSpace = 0;
+    ranges[0].OffsetInDescriptorsFromTableStart = 0;
 
+    // range for depth (t2)
+    ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    ranges[1].NumDescriptors = 1;          // t2
+    ranges[1].BaseShaderRegister = 2;      // t2
+    ranges[1].RegisterSpace = 0;
+    ranges[1].OffsetInDescriptorsFromTableStart = 0;
+
+    D3D12_ROOT_PARAMETER rp[3]{};
+
+    // b0: CBTAA
     rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rp[0].Descriptor.ShaderRegister = 0;
     rp[0].Descriptor.RegisterSpace = 0;
     rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
+    // t0–t1: current + history
     rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rp[1].DescriptorTable.NumDescriptorRanges = 1;
-    rp[1].DescriptorTable.pDescriptorRanges = &range;
+    rp[1].DescriptorTable.pDescriptorRanges = &ranges[0];
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // t2: depth
+    rp[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rp[2].DescriptorTable.NumDescriptorRanges = 1;
+    rp[2].DescriptorTable.pDescriptorRanges = &ranges[1];
+    rp[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -1295,9 +1312,9 @@ void DX_Resize(UINT w, UINT h)
     g_lightingColor.Reset();
     g_lightingRTVHeap.Reset();
     DX_CreateLightingColorRT(w, h);
-
-    g_taaHistory.Reset();
     DX_CreateTAAHistoryRT(w, h);
+
+    g_prevViewProjValid = false; // история больше не валидна после resize
 
     g_viewport = { 0.f, 0.f, float(w), float(h), 0.f, 1.f };
     g_scissor = { 0, 0, (LONG)w, (LONG)h };

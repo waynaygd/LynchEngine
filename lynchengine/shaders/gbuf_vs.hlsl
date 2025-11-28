@@ -6,7 +6,8 @@ cbuffer CBPerObject : register(b0)
     float4x4 P;
     float4x4 MIT; 
     float uvMul;
-    float3 _pad;
+    float2 jitter;
+    float pad;
 }
 
 struct VSIn
@@ -28,6 +29,8 @@ VSOut main(VSIn i)
     float4 posW = mul(float4(i.pos, 1), M);
     float4 posV = mul(posW, V);
     o.posH = mul(posV, P); 
+
+    o.posH.xy += jitter * o.posH.w;
 
     o.nrmW = normalize(mul(i.nrm, (float3x3) MIT));
 

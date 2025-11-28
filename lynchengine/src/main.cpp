@@ -1,6 +1,22 @@
 ﻿#include "d3d_init.h"
 #include "uploader.h"
 
+static float Halton(UINT index, UINT base)
+{
+	float f = 1.0f;
+	float r = 0.0f;
+	while (index > 0)
+	{
+		f /= float(base);
+		r += f * float(index % base);
+		index /= base;
+	}
+	return r;
+}
+
+static UINT     g_taaSampleIndex = 0;
+static XMFLOAT2 g_taaJitterNDC = { 0.0f, 0.0f };
+
 void RenderFrame()
 {
 	HR(g_alloc[g_frameIndex]->Reset());
@@ -27,6 +43,31 @@ void RenderFrame()
 	XMMATRIX P = g_cam.Proj();	
 
 	XMMATRIX VP = XMMatrixMultiply(V, P);
+
+	XMFLOAT2 jitterNDC = { 0.0f, 0.0f };
+	if (g_taaEnabled) 
+	{
+		float h2 = Halton(g_taaSampleIndex & 1023u, 2);
+		float h3 = Halton(g_taaSampleIndex & 1023u, 3);
+		++g_taaSampleIndex;
+
+		const float jitterScale = 0.5f; // попробуй 0.3–0.5
+
+		float jitterPxX = (h2 - 0.5f) * jitterScale;
+		float jitterPxY = (h3 - 0.5f) * jitterScale;
+
+		float w = g_viewport.Width;
+		float h = g_viewport.Height;
+
+		jitterNDC.x = (2.0f * jitterPxX) / w;
+		jitterNDC.y = (-2.0f * jitterPxY) / h;
+	}
+	else
+	{
+		jitterNDC = { 0.0f, 0.0f };
+	}
+
+	g_taaJitterNDC = jitterNDC;
 
 	XMFLOAT4X4 currVP;
 	XMStoreFloat4x4(&currVP, XMMatrixTranspose(VP));
@@ -85,6 +126,7 @@ void RenderFrame()
 		XMStoreFloat4x4(&c.P, XMMatrixTranspose(P));
 		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));
 		c.uvMul = e.uvMul;
+		c.jitter = g_taaJitterNDC;
 
 		if (drawIdx >= g_cbMaxPerFrame) break;
 		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
@@ -251,14 +293,12 @@ void RenderFrame()
 	g_cmdList->RSSetViewports(1, &g_viewport);
 	g_cmdList->RSSetScissorRects(1, &g_scissor);
 
-	// G-buffer и depth в SRV для lighting
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i],
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-	// g_lightingColor как RT
 	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
 		D3D12_RESOURCE_STATE_RENDER_TARGET);
 	g_lightingColorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -311,7 +351,6 @@ void RenderFrame()
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
 
-	// После lighting: g_lightingColor → SRV, history → SRV
 	Transition(g_cmdList.Get(), g_lightingColor.Get(), g_lightingColorState,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	g_lightingColorState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
@@ -320,7 +359,6 @@ void RenderFrame()
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	g_taaHistoryState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	// Backbuffer: PRESENT → RENDER_TARGET для TAA-поста
 	auto bbToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		g_backBuffers[g_frameIndex].Get(),
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -333,7 +371,6 @@ void RenderFrame()
 	const float clearBB[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	g_cmdList->ClearRenderTargetView(rtv, clearBB, 0, nullptr);
 
-	// TAA-pass: g_lightingColor (t0) + g_taaHistory (t1) → backbuffer
 	g_cmdList->SetGraphicsRootSignature(g_rsTAA.Get());
 	g_cmdList->SetPipelineState(g_psoTAA.Get());
 
@@ -344,22 +381,34 @@ void RenderFrame()
 
 	CBTAA_CPU cb{};
 
-	XMStoreFloat4x4(&cb.currViewProj, XMMatrixTranspose(V* P));
+	XMMATRIX currVP_T = XMMatrixTranspose(VP);
+
+	XMStoreFloat4x4(&cb.currViewProj, currVP_T);
+
+	XMMATRIX invCurrVP = XMMatrixInverse(nullptr, VP);
+
+	XMStoreFloat4x4(&cb.invCurrViewProj, XMMatrixTranspose(invCurrVP));
 
 	if (g_prevViewProjValid)
 		cb.prevViewProj = g_prevViewProj;
 	else
 		cb.prevViewProj = cb.currViewProj;
 
-	cb.jitter = { 0.0f, 0.0f };
+	cb.jitter = g_taaJitterNDC;
+	cb.alpha = g_taaAlpha;
 
-	cb.alpha = g_taaAlpha;    
-	cb.enableTAA = g_taaEnabled ? 1.0f : 0.0f;
+	// включаем TAA только если и флаг включен, и есть валидная история
+	cb.enableTAA = (g_taaEnabled && g_prevViewProjValid) ? 1.0f : 0.0f;
 
 	std::memcpy(g_cbTAAPtr, &cb, sizeof(cb));
 
 	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTAA->GetGPUVirtualAddress());
+
+	// t0 (current) и t1 (history) — это диапазон, начинающийся с g_lightingColorSRV
 	g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(g_lightingColorSRV));
+
+	// t2 (depth) — отдельный SRV из g-buffer
+	g_cmdList->SetGraphicsRootDescriptorTable(2, SRV_GPU(g_gbufDepthSRV));
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	g_cmdList->DrawInstanced(3, 1, 0, 0);
