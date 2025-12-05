@@ -345,6 +345,15 @@ void RenderFrame()
 	XMMATRIX invVP = XMMatrixInverse(nullptr, V * P);
 	XMStoreFloat4x4(&L.invViewProj, invVP);
 
+	L.fogColor = g_fogColor;
+	L.fogDensity = g_fogDensity;
+	L.fogStartDistance = g_fogStartDistance;
+	L.fogHeightFalloff = g_fogHeightFalloff;
+	L.fogAnisotropy = g_fogAnisotropy;
+	L.atmosphereCleanliness = g_atmosphereCleanliness;
+	L.skyCleanColor = g_skyCleanColor;
+	L.skyDirtyColor = g_skyDirtyColor;
+
 	std::memcpy(g_cbLightingPtr, &L, sizeof(L));
 	g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbLighting->GetGPUVirtualAddress());
 

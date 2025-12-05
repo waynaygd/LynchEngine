@@ -280,6 +280,15 @@ struct CBTAA_CPU
 extern XMFLOAT4X4 g_prevViewProj;
 extern bool g_prevViewProjValid;
 
+extern XMFLOAT3 g_fogColor;
+extern float    g_fogDensity;
+extern float    g_fogStartDistance;
+extern float    g_fogHeightFalloff;
+extern float    g_fogAnisotropy;
+extern float    g_atmosphereCleanliness;
+extern XMFLOAT3 g_skyCleanColor;
+extern XMFLOAT3 g_skyDirtyColor;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();

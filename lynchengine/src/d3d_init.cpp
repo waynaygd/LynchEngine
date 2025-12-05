@@ -227,7 +227,7 @@ void BuildEditorUI()
 
         if (ImGui::BeginTabItem("Terrain"))
         {
-            if (ImGui::SliderFloat("Height", &g_heightMap, 0.0f, 25.0f)) {
+            if (ImGui::SliderFloat("Height", &g_heightMap, 0.0f, 100.0f)) {
                 UpdateTilesHeight(g_heightMap);
             }
             ImGui::Checkbox("One Tile Mode", &g_terrainonetile);
@@ -241,6 +241,22 @@ void BuildEditorUI()
         {
             ImGui::Checkbox("Enable TAA", &g_taaEnabled);
             ImGui::SliderFloat("TAA Alpha", &g_taaAlpha, 0.0f, 1.0f);
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Atmosphere"))
+        {
+            ImGui::ColorEdit3("Fog Color", &g_fogColor.x);
+            ImGui::SliderFloat("Fog Density", &g_fogDensity, 0.0f, 0.3f);
+            ImGui::SliderFloat("Fog Start Dist", &g_fogStartDistance, 0.0f, 200.0f);
+            ImGui::SliderFloat("Fog Height Falloff", &g_fogHeightFalloff, 0.0f, 1.0f);
+
+            ImGui::Separator();
+            ImGui::Text("Sky colors");
+            ImGui::ColorEdit3("Clean Sky", &g_skyCleanColor.x);
+            ImGui::ColorEdit3("Dirty Sky", &g_skyDirtyColor.x);
+            ImGui::SliderFloat("Cleanliness", &g_atmosphereCleanliness, 0.0f, 1.0f);
 
             ImGui::EndTabItem();
         }

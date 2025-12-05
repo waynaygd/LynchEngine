@@ -32,8 +32,18 @@ struct CBLighting {
     UINT   lightCount; XMFLOAT3 _pad2;
     XMFLOAT4X4 invViewProj; 
     XMFLOAT4X4 dirLightVP;
+
+    XMFLOAT3 fogColor;           float fogDensity;          
+
+    float    fogStartDistance;   float fogHeightFalloff; 
+    float    fogAnisotropy;      float atmosphereCleanliness; 
+
+    XMFLOAT3 skyCleanColor;      float _pad3;         
+    XMFLOAT3 skyDirtyColor;      float _pad4;         
+
     LightGPU   lights[MAX_LIGHTS]; 
 };
+
 static_assert(sizeof(CBLighting) % 16 == 0, "CB must be 16B aligned");
 
 extern std::vector<LightAuthor> g_lightsAuthor;

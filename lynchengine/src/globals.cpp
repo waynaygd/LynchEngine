@@ -81,8 +81,8 @@ bool g_terrainshow_wireframe = 0;
 
 float g_uvMul = 1.0f;
 
-int   uiGridN = 32;     
-float uiWorldSize = 200.f;  
+int   uiGridN = 256;     
+float uiWorldSize = 800.f;  
 int   uiTileVertsN = 12;    
 int   uiLodPx = 32;
 float g_lodThresholdPx = 1000.f;
@@ -183,3 +183,14 @@ float g_taaAlpha = 0.8f;
 ComPtr<ID3D12Resource> g_cbTAA;
 uint8_t* g_cbTAAPtr = nullptr;
 UINT g_cbTAAStride = 256;
+
+XMFLOAT3 g_fogColor = { 0.75f, 0.80f, 0.90f };
+float    g_fogDensity = 0.04f;
+float    g_fogStartDistance = 10.0f;
+float    g_fogHeightFalloff = 0.05f;
+float    g_fogAnisotropy = 0.0f;
+
+float    g_atmosphereCleanliness = 0.3f;
+
+XMFLOAT3 g_skyCleanColor = { 0.25f, 0.50f, 1.0f };
+XMFLOAT3 g_skyDirtyColor = { 0.6f, 0.6f, 0.6f };

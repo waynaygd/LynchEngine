@@ -30,6 +30,18 @@ cbuffer CBLighting : register(b0)
     float3 _padB;
     float4x4 invViewProj;
     float4x4 dirLightVP;
+    
+    float3 gFogColor;
+    float gFogDensity;
+    float gFogStartDistance;
+    float gFogHeightFalloff;
+    float gFogAnisotropy;
+    float gAtmosphereCleanliness;
+    float3 gSkyCleanColor;
+    float _pad3;
+    float3 gSkyDirtyColor;
+    float _pad4;
+    
     Light lights[MAX_LIGHTS]; 
 };
 
@@ -57,6 +69,69 @@ float3 LoadNormalWS(float2 uv)
     float3 n = gNormal.Sample(gSamp, uv).xyz;
 #endif
     return normalize(n);
+}
+
+float RayleighPhase(float mu)
+{
+    return 0.75f * (1.0f + mu * mu);
+}
+
+float MiePhase(float mu, float g)
+{
+    float g2 = g * g;
+    float denom = pow(1.0f + g2 - 2.0f * g * mu, 1.5f);
+    return (1.0f - g2) / max(1e-3f, denom);
+}
+
+float3 ComputeSkyColor(float3 viewDir)
+{
+    float3 sunDir = float3(0, 1, 0);
+    if (lightCount > 0 && lights[0].type == LIGHT_TYPE_DIR)
+        sunDir = normalize(-lights[0].dirW);
+
+    float mu = dot(viewDir, sunDir); 
+    float muSat = saturate(mu);
+
+    float tHeight = saturate(viewDir.y * 0.5f + 0.5f); // -1..1 -> 0..1
+
+    float3 cleanBottom = float3(1.0, 0.9, 0.8); 
+    float3 cleanTop = gSkyCleanColor; 
+    float3 dirtyBottom = float3(0.9, 0.9, 0.9);
+    float3 dirtyTop = gSkyDirtyColor;
+
+    float3 cleanSky = lerp(cleanBottom, cleanTop, tHeight);
+    float3 dirtySky = lerp(dirtyBottom, dirtyTop, tHeight);
+
+    float3 sky = lerp(cleanSky, dirtySky, saturate(gAtmosphereCleanliness));
+
+    float sunDiscExp = 256.0; 
+    float sunHaloExp = 8.0; 
+    float sunDisc = pow(muSat, sunDiscExp);
+    float sunHalo = pow(muSat, sunHaloExp);
+
+    float sunIntensity = 3.0;
+
+    float3 sunColor = sunIntensity * (sunDisc + 0.2 * sunHalo) * float3(1.0, 1.0, 1.0);
+
+    sky += sunColor;
+
+    sky = 1.0f - exp(-sky * 0.8f);
+
+    return sky;
+}
+
+float ComputeFogFactor(float3 worldPos)
+{
+    float3 camToPos = worldPos - camPosWS;
+    float dist = length(camToPos);
+
+    dist = max(0.0f, dist - gFogStartDistance);
+
+    float height = worldPos.y;
+    float heightAtten = exp(-max(0.0f, height) * gFogHeightFalloff);
+
+    float opticalDepth = dist * gFogDensity * heightAtten;
+    return saturate(1.0f - exp(-opticalDepth));
 }
 
 float3 ShadeDirectional(in Light L, float3 N, float3 albedo)
@@ -141,7 +216,12 @@ float4 main(PSIn i) : SV_Target
     float z = gDepth.Sample(gSampZ, i.uv).r;
 
     if (z >= 1.0 - 1e-6)
-        return float4(0.498, 0.78, 0.9, 1);
+    {
+        float3 wpFar = ReconstructWS(i.uv, 1.0, invViewProj);
+        float3 viewDir = normalize(wpFar - camPosWS);
+        float3 skyCol = ComputeSkyColor(viewDir);
+        return float4(skyCol, 1.0);
+    }
 
     float3 N = LoadNormalWS(i.uv);
     float3 P = ReconstructWS(i.uv, z, invViewProj);
@@ -162,6 +242,18 @@ float4 main(PSIn i) : SV_Target
     }
 
     float3 ambient = albedo * 0.03;
+    float3 litColor = Lsum + ambient;
 
-    return float4(Lsum + ambient, 1.0);
+    float fogFactor = ComputeFogFactor(P);
+// стало Ц без подмешивани€ цвета неба дл€ геометрии:
+    float3 fogCol = gFogColor;
+
+#if 0
+float3 viewDir = normalize(P - camPosWS);
+float3 skyCol = ComputeSkyColor(viewDir);
+fogCol = lerp(fogCol, skyCol, 0.1f);   // маленький коэффициент
+#endif
+
+    float3 finalColor = lerp(litColor, fogCol, fogFactor);
+    return float4(finalColor, 1.0);
 }
