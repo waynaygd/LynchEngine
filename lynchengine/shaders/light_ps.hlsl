@@ -92,7 +92,7 @@ float3 ComputeSkyColor(float3 viewDir)
     float mu = dot(viewDir, sunDir); 
     float muSat = saturate(mu);
 
-    float tHeight = saturate(viewDir.y * 0.5f + 0.5f); // -1..1 -> 0..1
+    float tHeight = saturate(viewDir.y * 0.5f + 0.5f);
 
     float3 cleanBottom = float3(1.0, 0.9, 0.8); 
     float3 cleanTop = gSkyCleanColor; 
@@ -245,13 +245,12 @@ float4 main(PSIn i) : SV_Target
     float3 litColor = Lsum + ambient;
 
     float fogFactor = ComputeFogFactor(P);
-// стало Ц без подмешивани€ цвета неба дл€ геометрии:
     float3 fogCol = gFogColor;
 
 #if 0
 float3 viewDir = normalize(P - camPosWS);
 float3 skyCol = ComputeSkyColor(viewDir);
-fogCol = lerp(fogCol, skyCol, 0.1f);   // маленький коэффициент
+fogCol = lerp(fogCol, skyCol, 0.1f); 
 #endif
 
     float3 finalColor = lerp(litColor, fogCol, fogFactor);

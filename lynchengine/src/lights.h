@@ -52,17 +52,16 @@ extern int g_selectedLight;
 struct ShadowMap2D {
     UINT width = 2048, height = 2048;
 
-    // Формат ресурса - typeless, чтобы из него сделать и DSV, и SRV
     DXGI_FORMAT resFormat = DXGI_FORMAT_R32_TYPELESS;
     DXGI_FORMAT dsvFormat = DXGI_FORMAT_D32_FLOAT;
     DXGI_FORMAT srvFormat = DXGI_FORMAT_R32_FLOAT;
 
-    ComPtr<ID3D12Resource> tex;          // сама тень
+    ComPtr<ID3D12Resource> tex;        
     D3D12_VIEWPORT viewport{};
     D3D12_RECT scissor{};
 
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv{};   // дескриптор DSV
-    D3D12_CPU_DESCRIPTOR_HANDLE srv{};   // дескриптор SRV
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv{}; 
+    D3D12_CPU_DESCRIPTOR_HANDLE srv{};   
 };
 
 struct CBShadow { 

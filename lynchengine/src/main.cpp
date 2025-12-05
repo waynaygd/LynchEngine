@@ -51,7 +51,7 @@ void RenderFrame()
 		float h3 = Halton(g_taaSampleIndex & 1023u, 3);
 		++g_taaSampleIndex;
 
-		const float jitterScale = 0.5f; // попробуй 0.3–0.5
+		const float jitterScale = 0.5f; 
 
 		float jitterPxX = (h2 - 0.5f) * jitterScale;
 		float jitterPxY = (h3 - 0.5f) * jitterScale;
@@ -406,17 +406,14 @@ void RenderFrame()
 	cb.jitter = g_taaJitterNDC;
 	cb.alpha = g_taaAlpha;
 
-	// включаем TAA только если и флаг включен, и есть валидная история
 	cb.enableTAA = (g_taaEnabled && g_prevViewProjValid) ? 1.0f : 0.0f;
 
 	std::memcpy(g_cbTAAPtr, &cb, sizeof(cb));
 
 	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTAA->GetGPUVirtualAddress());
 
-	// t0 (current) и t1 (history) — это диапазон, начинающийся с g_lightingColorSRV
 	g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(g_lightingColorSRV));
 
-	// t2 (depth) — отдельный SRV из g-buffer
 	g_cmdList->SetGraphicsRootDescriptorTable(2, SRV_GPU(g_gbufDepthSRV));
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

@@ -707,37 +707,32 @@ void CreateTerrainRSandPSO()
 
 void CreateTAARSandPSO()
 {
-    // range for current color + history (t0, t1)
     D3D12_DESCRIPTOR_RANGE ranges[2]{};
 
     ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    ranges[0].NumDescriptors = 2;          // t0, t1
-    ranges[0].BaseShaderRegister = 0;      // t0
+    ranges[0].NumDescriptors = 2;        
+    ranges[0].BaseShaderRegister = 0;     
     ranges[0].RegisterSpace = 0;
     ranges[0].OffsetInDescriptorsFromTableStart = 0;
 
-    // range for depth (t2)
     ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    ranges[1].NumDescriptors = 1;          // t2
-    ranges[1].BaseShaderRegister = 2;      // t2
+    ranges[1].NumDescriptors = 1;       
+    ranges[1].BaseShaderRegister = 2;    
     ranges[1].RegisterSpace = 0;
     ranges[1].OffsetInDescriptorsFromTableStart = 0;
 
     D3D12_ROOT_PARAMETER rp[3]{};
 
-    // b0: CBTAA
     rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rp[0].Descriptor.ShaderRegister = 0;
     rp[0].Descriptor.RegisterSpace = 0;
     rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // t0–t1: current + history
     rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rp[1].DescriptorTable.NumDescriptorRanges = 1;
     rp[1].DescriptorTable.pDescriptorRanges = &ranges[0];
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // t2: depth
     rp[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rp[2].DescriptorTable.NumDescriptorRanges = 1;
     rp[2].DescriptorTable.pDescriptorRanges = &ranges[1];
@@ -746,7 +741,7 @@ void CreateTAARSandPSO()
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    samp.ShaderRegister = 0; // s0
+    samp.ShaderRegister = 0; 
     samp.RegisterSpace = 0;
     samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
@@ -802,23 +797,21 @@ void CreateTAARSandPSO()
 
 void DX_CreateTAAHistoryRT(UINT w, UINT h)
 {
-    const DXGI_FORMAT fmt = g_backBufferFormat; // тот же формат, что и backbuffer
+    const DXGI_FORMAT fmt = g_backBufferFormat;
 
     CD3DX12_HEAP_PROPERTIES heapDefault(D3D12_HEAP_TYPE_DEFAULT);
     auto desc = CD3DX12_RESOURCE_DESC::Tex2D(
         fmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_NONE);
 
-    // История только копируется и читается как SRV – RTV не нужен
     HR(g_device->CreateCommittedResource(
         &heapDefault, D3D12_HEAP_FLAG_NONE,
         &desc,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, // стартуем как SRV
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         nullptr,
         IID_PPV_ARGS(&g_taaHistory)));
 
     g_taaHistoryState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-    // Выделяем SRV-слот – важно: он идёт сразу после g_lightingColorSRV
     UINT slot = SRV_Alloc();
     g_taaHistorySRV = slot;
 
@@ -1330,7 +1323,7 @@ void DX_Resize(UINT w, UINT h)
     DX_CreateLightingColorRT(w, h);
     DX_CreateTAAHistoryRT(w, h);
 
-    g_prevViewProjValid = false; // история больше не валидна после resize
+    g_prevViewProjValid = false;
 
     g_viewport = { 0.f, 0.f, float(w), float(h), 0.f, 1.f };
     g_scissor = { 0, 0, (LONG)w, (LONG)h };
