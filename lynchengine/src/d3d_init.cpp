@@ -119,6 +119,8 @@ void BuildEditorUI()
 
                 ImGui::SliderFloat("UV multiplier", &e.uvMul, 0.1f, 32.0f, "%.2f");
 
+                ImGui::Checkbox("XRay highlight", &e.xray);
+
                 if (ImGui::TreeNode("Bindings")) {
                     if (ImGui::BeginListBox("Mesh")) {
                         for (UINT i = 0; i < g_meshes.size(); ++i) {
@@ -387,7 +389,7 @@ void DX_CreateGBuffer(UINT w, UINT h)
 
     makeSRV2D(g_gbufAlbedo.Get(), DXGI_FORMAT_R8G8B8A8_UNORM, g_gbufAlbedoSRV);
     makeSRV2D(g_gbufNormal.Get(), DXGI_FORMAT_R16G16B16A16_FLOAT, g_gbufNormalSRV);
-    makeSRV2D(g_depthBuffer.Get(), DXGI_FORMAT_R32_FLOAT, g_gbufDepthSRV);
+    makeSRV2D(g_depthBuffer.Get(), DEPTH_SRV_FMT, g_gbufDepthSRV);
 
     assert(g_gbufNormalSRV == g_gbufAlbedoSRV + 1);
     assert(g_gbufDepthSRV == g_gbufAlbedoSRV + 2);
@@ -448,6 +450,22 @@ void CreateGBufferRSandPSO()
       { "TEXCOORD",0, DXGI_FORMAT_R32G32_FLOAT,    0, 24,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
+    D3D12_DEPTH_STENCIL_DESC ds{};
+    ds.DepthEnable = TRUE;
+    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+    ds.StencilEnable = TRUE;
+    ds.StencilReadMask = 0xFF;
+    ds.StencilWriteMask = 0xFF;
+
+    ds.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    ds.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+    ds.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    ds.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+
+    ds.BackFace = ds.FrontFace;
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
     pso.pRootSignature = g_rsGBuffer.Get();
     pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
@@ -455,7 +473,7 @@ void CreateGBufferRSandPSO()
     pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     pso.SampleMask = UINT_MAX;
     pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState = ds;
     pso.InputLayout = { inputElems, _countof(inputElems) };
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pso.NumRenderTargets = 2;
@@ -784,25 +802,83 @@ void CreateTAARSandPSO()
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTAA)));
 }
 
+void CreateXRayPSO()
+{
+    auto vs = CompileShaderFromFile(L"shaders\\gbuf_vs.hlsl", "main", "vs_5_1");
+    auto ps = CompileShaderFromFile(L"shaders\\xray_ps.hlsl", "main", "ps_5_1");
+
+    D3D12_INPUT_ELEMENT_DESC inputElems[] = {
+        { "POSITION",0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",  0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD",0, DXGI_FORMAT_R32G32_FLOAT,    0, 24,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+    pso.pRootSignature = g_rsGBuffer.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.InputLayout = { inputElems, _countof(inputElems) };
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+    // полупрозрачный overlay поверх backbuffer’а
+    auto blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    auto& rt0 = blend.RenderTarget[0];
+    rt0.BlendEnable = TRUE;
+    rt0.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    rt0.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    rt0.BlendOp = D3D12_BLEND_OP_ADD;
+    rt0.SrcBlendAlpha = D3D12_BLEND_ONE;
+    rt0.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+    rt0.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    pso.BlendState = blend;
+
+    pso.SampleMask = UINT_MAX;
+    auto rast = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    rast.CullMode = D3D12_CULL_MODE_BACK;
+    pso.RasterizerState = rast;
+
+    D3D12_DEPTH_STENCIL_DESC ds{};
+    ds.DepthEnable = FALSE;                        
+    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    ds.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+    ds.StencilEnable = TRUE;
+    ds.StencilReadMask = 0xFF;
+    ds.StencilWriteMask = 0x00;                  
+
+    ds.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL; 
+    ds.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    ds.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    ds.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    ds.BackFace = ds.FrontFace;
+
+    pso.DepthStencilState = ds;
+
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = g_backBufferFormat;
+    pso.DSVFormat = g_depthFormat;
+    pso.SampleDesc = { 1, 0 };
+
+    HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoXRay)));
+}
+
 void DX_CreateTAAHistoryRT(UINT w, UINT h)
 {
-    const DXGI_FORMAT fmt = g_backBufferFormat; // тот же формат, что и backbuffer
+    const DXGI_FORMAT fmt = g_backBufferFormat;
 
     CD3DX12_HEAP_PROPERTIES heapDefault(D3D12_HEAP_TYPE_DEFAULT);
     auto desc = CD3DX12_RESOURCE_DESC::Tex2D(
         fmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_NONE);
 
-    // История только копируется и читается как SRV – RTV не нужен
     HR(g_device->CreateCommittedResource(
         &heapDefault, D3D12_HEAP_FLAG_NONE,
         &desc,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, // стартуем как SRV
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         nullptr,
         IID_PPV_ARGS(&g_taaHistory)));
 
     g_taaHistoryState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-    // Выделяем SRV-слот – важно: он идёт сразу после g_lightingColorSRV
     UINT slot = SRV_Alloc();
     g_taaHistorySRV = slot;
 
@@ -815,15 +891,11 @@ void DX_CreateTAAHistoryRT(UINT w, UINT h)
     g_device->CreateShaderResourceView(g_taaHistory.Get(), &sd, SRV_CPU(slot));
 }
 
-const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R32_TYPELESS;
-const DXGI_FORMAT DEPTH_DSV_FMT = DXGI_FORMAT_D32_FLOAT;   
-const DXGI_FORMAT DEPTH_SRV_FMT = DXGI_FORMAT_R32_FLOAT; 
-
 void DX_CreateDepth(UINT w, UINT h)
 {
-    const DXGI_FORMAT DepthResFmt = DXGI_FORMAT_R32_TYPELESS;
-    const DXGI_FORMAT DepthDSVFmt = DXGI_FORMAT_D32_FLOAT;  
-    const DXGI_FORMAT DepthSRVFmt = DXGI_FORMAT_R32_FLOAT;   
+    const DXGI_FORMAT DepthResFmt = DEPTH_RES_FMT;
+    const DXGI_FORMAT DepthDSVFmt = DEPTH_DSV_FMT;
+    const DXGI_FORMAT DepthSRVFmt = DEPTH_SRV_FMT;
 
     g_depthFormat = DepthDSVFmt;
 
@@ -1217,6 +1289,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     CreateTerrainRSandPSO();
     CreateLightingRSandPSO();
     CreateTAARSandPSO();
+    CreateXRayPSO();
 
     CreatePerObjectCB(1024);
     CreateTerrainCB();

@@ -183,3 +183,5 @@ float g_taaAlpha = 0.8f;
 ComPtr<ID3D12Resource> g_cbTAA;
 uint8_t* g_cbTAAPtr = nullptr;
 UINT g_cbTAAStride = 256;
+
+ComPtr<ID3D12PipelineState> g_psoXRay;

@@ -98,6 +98,7 @@ void RenderFrame()
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[0], c0, 0, nullptr);
 	g_cmdList->ClearRenderTargetView(g_gbufRTV[1], c1, 0, nullptr);
 	g_cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	g_cmdList->OMSetStencilRef(1);
 
 	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
 	g_cmdList->SetPipelineState(g_psoGBuffer.Get());
@@ -397,17 +398,13 @@ void RenderFrame()
 	cb.jitter = g_taaJitterNDC;
 	cb.alpha = g_taaAlpha;
 
-	// включаем TAA только если и флаг включен, и есть валидная история
 	cb.enableTAA = (g_taaEnabled && g_prevViewProjValid) ? 1.0f : 0.0f;
 
 	std::memcpy(g_cbTAAPtr, &cb, sizeof(cb));
 
 	g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTAA->GetGPUVirtualAddress());
-
-	// t0 (current) и t1 (history) — это диапазон, начинающийся с g_lightingColorSRV
 	g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(g_lightingColorSRV));
 
-	// t2 (depth) — отдельный SRV из g-buffer
 	g_cmdList->SetGraphicsRootDescriptorTable(2, SRV_GPU(g_gbufDepthSRV));
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -433,6 +430,84 @@ void RenderFrame()
 		D3D12_RESOURCE_STATE_RENDER_TARGET);
 	g_cmdList->ResourceBarrier(1, &bbBackToRT);
 	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+
+	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_DEPTH_READ);
+
+	// привязываем backbuffer как RTV и depth/stencil как DSV (для stencil-теста)
+	auto dsvX = g_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, &dsvX);
+
+	g_cmdList->RSSetViewports(1, &g_viewport);
+	g_cmdList->RSSetScissorRects(1, &g_scissor);
+
+	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
+	g_cmdList->SetPipelineState(g_psoXRay.Get());
+	{
+		ID3D12DescriptorHeap* heapsX[] = { g_srvHeap.Get(), g_sampHeap.Get() };
+		g_cmdList->SetDescriptorHeaps(2, heapsX);
+	}
+
+	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	// stencil == 1 (как мы записали в G-buffer)
+	g_cmdList->OMSetStencilRef(1);
+
+	// мы уже вычисляли V, P, jitterNDC и т.д. выше, так что можем переиспользовать
+	for (const Entity& e : g_entities)
+	{
+		if (!e.xray) continue; // рисуем только отмеченные сущности
+
+		if (e.meshId >= g_meshes.size()) continue;
+		const MeshGPU& m = g_meshes[e.meshId];
+
+		XMMATRIX S = XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z);
+		XMMATRIX Rx = XMMatrixRotationX(XMConvertToRadians(e.rotDeg.x));
+		XMMATRIX Ry = XMMatrixRotationY(XMConvertToRadians(e.rotDeg.y));
+		XMMATRIX Rz = XMMatrixRotationZ(XMConvertToRadians(e.rotDeg.z));
+		XMMATRIX T = XMMatrixTranslation(e.pos.x, e.pos.y, e.pos.z);
+		XMMATRIX M = S * Rx * Ry * Rz * T;
+		XMMATRIX MIT = XMMatrixTranspose(XMMatrixInverse(nullptr, M));
+
+		CBPerObject c{};
+		XMStoreFloat4x4(&c.M, XMMatrixTranspose(M));
+		XMStoreFloat4x4(&c.V, XMMatrixTranspose(V));
+		XMStoreFloat4x4(&c.P, XMMatrixTranspose(P));
+		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));
+		c.uvMul = e.uvMul;
+		c.jitter = g_taaJitterNDC; // тот же jitter, чтобы совпадало с TAA-кадром
+
+		if (drawIdx >= g_cbMaxPerFrame) break;
+		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
+		D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
+		g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
+
+		g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
+		g_cmdList->IASetIndexBuffer(&m.ibv);
+
+		auto ResolveTexId = [&](const Submesh* psm, UINT entityFallback)->UINT {
+			if (psm && psm->materialId != UINT(-1) && psm->materialId < m.materialsTexId.size()) {
+				UINT t = m.materialsTexId[psm->materialId];
+				if (t != UINT(-1) && t < g_textures.size()) return t;
+			}
+			if (entityFallback != UINT(-1) && entityFallback < g_textures.size()) return entityFallback;
+			return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
+			};
+
+		if (m.subsets.empty()) {
+			UINT texId = ResolveTexId(nullptr, e.texId);
+			g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
+			g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
+		}
+		else {
+			for (const Submesh& sm : m.subsets) {
+				UINT texId = ResolveTexId(&sm, e.texId);
+				g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
+				g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+			}
+		}
+
+		++drawIdx;
+	}
 
 	ImGui_ImplWin32_NewFrame();
 	ImGui_ImplDX12_NewFrame();

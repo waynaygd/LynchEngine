@@ -140,6 +140,9 @@
     <Text Include="shaders\taa_ps.hlsl">
       <Filter>Main Files\Shaders</Filter>
     </Text>
+    <Text Include="shaders\xray_ps.hlsl">
+      <Filter>Main Files\Shaders</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">

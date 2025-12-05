@@ -18,6 +18,7 @@ void CreateGBufferRSandPSO();
 void CreateLightingRSandPSO();
 void CreateTerrainRSandPSO();
 void CreateTAARSandPSO();
+void CreateXRayPSO();   
 void DX_CreateDepth(UINT w, UINT h);
 void DX_CreateSRVHeap(UINT numDescriptors = 1);
 void DX_CreateImGuiHeap();
@@ -65,4 +66,8 @@ void CreatePerObjectCB(UINT maxPerFrame);
 void CreateTerrainCB();
 
 XMMATRIX MakeDirLightVP(XMVECTOR lightDir, XMFLOAT3 sceneCenter, float sceneHalf);
+
+const DXGI_FORMAT DEPTH_RES_FMT = DXGI_FORMAT_R24G8_TYPELESS;
+const DXGI_FORMAT DEPTH_DSV_FMT = DXGI_FORMAT_D24_UNORM_S8_UINT;
+const DXGI_FORMAT DEPTH_SRV_FMT = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
 

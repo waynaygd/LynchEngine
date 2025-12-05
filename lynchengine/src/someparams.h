@@ -126,6 +126,8 @@ struct Entity {
     DirectX::XMFLOAT3 rotDeg{ 0,0,0 }; 
     DirectX::XMFLOAT3 scale{ 1,1,1 };
     float uvMul = 1.0f;
+
+    bool xray = false;
 };
 extern std::vector<Entity> g_entities;
 
@@ -279,6 +281,8 @@ struct CBTAA_CPU
 
 extern XMFLOAT4X4 g_prevViewProj;
 extern bool g_prevViewProjValid;
+
+extern ComPtr<ID3D12PipelineState> g_psoXRay;
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
