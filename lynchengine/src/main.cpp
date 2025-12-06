@@ -433,7 +433,6 @@ void RenderFrame()
 
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_DEPTH_READ);
 
-	// привязываем backbuffer как RTV и depth/stencil как DSV (для stencil-теста)
 	auto dsvX = g_dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	g_cmdList->OMSetRenderTargets(1, &rtv, FALSE, &dsvX);
 
@@ -449,13 +448,11 @@ void RenderFrame()
 
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	// stencil == 1 (как мы записали в G-buffer)
 	g_cmdList->OMSetStencilRef(1);
 
-	// мы уже вычисляли V, P, jitterNDC и т.д. выше, так что можем переиспользовать
 	for (const Entity& e : g_entities)
 	{
-		if (!e.xray) continue; // рисуем только отмеченные сущности
+		if (!e.xray) continue;
 
 		if (e.meshId >= g_meshes.size()) continue;
 		const MeshGPU& m = g_meshes[e.meshId];
@@ -474,7 +471,7 @@ void RenderFrame()
 		XMStoreFloat4x4(&c.P, XMMatrixTranspose(P));
 		XMStoreFloat4x4(&c.MIT, XMMatrixTranspose(MIT));
 		c.uvMul = e.uvMul;
-		c.jitter = g_taaJitterNDC; // тот же jitter, чтобы совпадало с TAA-кадром
+		c.jitter = g_taaJitterNDC;
 
 		if (drawIdx >= g_cbMaxPerFrame) break;
 		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
