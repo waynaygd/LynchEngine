@@ -193,4 +193,4 @@ float    g_fogAnisotropy = 0.0f;
 float    g_atmosphereCleanliness = 0.3f;
 
 XMFLOAT3 g_skyCleanColor = { 0.25f, 0.50f, 1.0f };
-XMFLOAT3 g_skyDirtyColor = { 0.6f, 0.6f, 0.6f };
+XMFLOAT3 g_skyDirtyColor = { 0.6f, 0.6f, 0.6f };     

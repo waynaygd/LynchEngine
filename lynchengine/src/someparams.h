@@ -289,6 +289,11 @@ extern float    g_atmosphereCleanliness;
 extern XMFLOAT3 g_skyCleanColor;
 extern XMFLOAT3 g_skyDirtyColor;
 
+extern float g_sunTime;
+extern const float dayLength;
+extern float phase;
+extern float angle;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();

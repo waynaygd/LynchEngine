@@ -82,6 +82,28 @@ void RenderFrame()
 			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
+	static float sunTime = 0.0f;
+	sunTime += dt;
+
+	const float dayLength = 120.0f;         
+	float tCycle = fmodf(sunTime, dayLength);
+	float phase = tCycle / dayLength; 
+	float angle = phase * XM_2PI;   
+
+	XMFLOAT3 sunPos = { 0.0f, sinf(angle), cosf(angle) };
+	XMVECTOR sunDirV = XMVector3Normalize(XMVectorSet(-sunPos.x, -sunPos.y, -sunPos.z, 0.0f));
+
+	XMFLOAT3 sunDir;
+	XMStoreFloat3(&sunDir, sunDirV);
+
+	for (auto& A : g_lightsAuthor)
+	{
+		if (A.type == LT_Dir) {
+			A.dirW = sunDir;
+			break;
+		}
+	}
+
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
 	Transition(g_cmdList.Get(), g_depthBuffer.Get(), g_depthState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
@@ -324,6 +346,7 @@ void RenderFrame()
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
 	for (auto& A : g_lightsAuthor) if (A.type != LT_Point)
 		XMStoreFloat3(&A.dirW, XMVector3Normalize(XMLoadFloat3(&A.dirW)));
+
 	for (uint32_t i = 0; i < n; ++i)
 	{
 		const auto& A = g_lightsAuthor[i];
