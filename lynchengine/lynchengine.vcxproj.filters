@@ -43,7 +43,9 @@
     <ClCompile Include="src\textures.cpp">
       <Filter>Main Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\atmosphere_renderer.cpp" />
+    <ClCompile Include="src\atmosphere_renderer.cpp">
+      <Filter>Main Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\camera.h">

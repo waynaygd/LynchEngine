@@ -89,30 +89,47 @@ float3 ComputeSkyColor(float3 viewDir)
     if (lightCount > 0 && lights[0].type == LIGHT_TYPE_DIR)
         sunDir = normalize(-lights[0].dirW);
 
-    float mu = dot(viewDir, sunDir); 
+    float mu = dot(viewDir, sunDir);
     float muSat = saturate(mu);
 
     float tHeight = saturate(viewDir.y * 0.5f + 0.5f);
 
-    float3 cleanBottom = float3(1.0, 0.9, 0.8); 
-    float3 cleanTop = gSkyCleanColor; 
+    float3 cleanBottom = float3(1.0, 0.9, 0.8);
+    float3 cleanTop = gSkyCleanColor;
     float3 dirtyBottom = float3(0.9, 0.9, 0.9);
     float3 dirtyTop = gSkyDirtyColor;
 
     float3 cleanSky = lerp(cleanBottom, cleanTop, tHeight);
     float3 dirtySky = lerp(dirtyBottom, dirtyTop, tHeight);
 
-    float3 sky = lerp(cleanSky, dirtySky, saturate(gAtmosphereCleanliness));
+    float atm = saturate(gAtmosphereCleanliness);
+    float3 sky = lerp(cleanSky, dirtySky, atm);
 
-    float sunDiscExp = 256.0; 
-    float sunHaloExp = 8.0; 
+    float3 rayleighColor = float3(0.5, 0.7, 1.0);
+    float3 mieColor = float3(1.0, 0.9, 0.8);
+
+    float g = clamp(gFogAnisotropy, -0.95f, 0.95f);
+
+    float rayPhase = RayleighPhase(mu);
+    float miePhase = MiePhase(mu, g);
+
+    float rayleighStrength = 0.35f;
+    float mieStrength = 0.20f;
+
+    float3 scattering =
+        rayleighStrength * rayPhase * rayleighColor +
+        mieStrength * miePhase * mieColor;
+
+    sky += scattering;
+
+    float sunDiscExp = 256.0;
+    float sunHaloExp = 8.0;
     float sunDisc = pow(muSat, sunDiscExp);
     float sunHalo = pow(muSat, sunHaloExp);
 
     float sunIntensity = 3.0;
 
     float3 sunColor = sunIntensity * (sunDisc + 0.2 * sunHalo) * float3(1.0, 1.0, 1.0);
-
     sky += sunColor;
 
     sky = 1.0f - exp(-sky * 0.8f);
