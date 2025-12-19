@@ -314,13 +314,16 @@ extern ComPtr<ID3D12Resource> g_tlasInstances;
 
 extern uint32_t g_srvCursor;
 
+extern bool g_tlasDirty;
+extern UINT   g_tlasCapacity;
+extern void* g_tlasInstancesMapped;
+extern bool   g_tlasBuiltOnce;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();
 
 void UpdateInput(float dt);
-
-uint32_t AllocSRVRange(uint32_t count);
 
 inline void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int line) {
     if (FAILED(hr)) {

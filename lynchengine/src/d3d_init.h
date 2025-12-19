@@ -66,3 +66,6 @@ void CreateTerrainCB();
 
 XMMATRIX MakeDirLightVP(XMVECTOR lightDir, XMFLOAT3 sceneCenter, float sceneHalf);
 
+void DX_BuildBLAS_ForAllMeshes();
+void DX_BuildTLAS_FromEntities();
+

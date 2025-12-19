@@ -206,11 +206,9 @@ ComPtr<ID3D12Resource> g_tlas;
 ComPtr<ID3D12Resource> g_tlasScratch;
 ComPtr<ID3D12Resource> g_tlasInstances;
 
-uint32_t g_srvCursor = 0; 
+bool g_tlasDirty;
+UINT g_tlasCapacity = 0;
+void* g_tlasInstancesMapped = nullptr;
+bool g_tlasBuiltOnce = false;
 
-uint32_t AllocSRVRange(uint32_t count)
-{
-    uint32_t base = g_srvCursor;
-    g_srvCursor += count;
-    return base;
-}
+uint32_t g_srvCursor = 0; 

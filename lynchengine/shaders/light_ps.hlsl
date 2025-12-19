@@ -76,13 +76,19 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
     ray.TMax = tMax;
 
     RayQuery <
-    RAY_FLAG_FORCE_OPAQUE
+        RAY_FLAG_FORCE_OPAQUE |
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
     > q;
 
     q.TraceRayInline(gScene, 0, 0xFF, ray);
 
     while (q.Proceed())
     {
+        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        {
+            q.Abort();
+            break;
+        }
     }
 
     return (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
@@ -90,14 +96,14 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
 
 float ShadowDirectionalSoft_DXR(float3 Pws, float3 Nws, float3 LdirWs, float2 uv)
 {
-    const float tMin = 0.001;
+    const float tMin = 0.003;
     const float tMax = 200.0;
-    const float normalBias = 0.003;
+    const float normalBias = 0.006;
 
-    float3 origin = Pws + Nws * normalBias;
+    float3 origin = Pws + Nws * normalBias + LdirWs * tMin;
 
-    const float cone = 0.015; // м€гкость
-    const int rays = 8;
+    const float cone = 0.010;
+    const int rays = 12;
 
     float3 t, b;
     BuildOrthonormalBasis(LdirWs, t, b);
@@ -106,7 +112,7 @@ float ShadowDirectionalSoft_DXR(float3 Pws, float3 Nws, float3 LdirWs, float2 uv
     [unroll]
     for (int i = 0; i < rays; ++i)
     {
-        float2 r = Hash21(uv * (1000.0 + 13.0 * i));
+        float2 r = Hash21(uv * 2048.0 + float2(37.0 * i, 17.0 * i));
         float a = 6.2831853 * r.x;
         float rad = sqrt(max(1e-6, r.y));
         float2 d = rad * float2(cos(a), sin(a));

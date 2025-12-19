@@ -82,11 +82,10 @@ void RenderFrame()
 			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
-	/*
 	static float sunTime = 0.0f;
 	sunTime += dt;
 
-	const float dayLength = 120.0f;         
+	const float dayLength = 30.0f;         
 	float tCycle = fmodf(sunTime, dayLength);
 	float phase = tCycle / dayLength; 
 	float angle = phase * XM_2PI;   
@@ -105,7 +104,7 @@ void RenderFrame()
 			break;
 		}
 	}
-	*/
+
 
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -331,7 +330,14 @@ void RenderFrame()
 	g_cmdList->OMSetRenderTargets(1, &g_lightingColorRTV, FALSE, nullptr);
 
 	const float clearLighting[4] = { 0.06f, 0.06f, 0.08f, 1.0f };
+
 	g_cmdList->ClearRenderTargetView(g_lightingColorRTV, clearLighting, 0, nullptr);
+
+	if (g_hasDXR && g_tlasDirty)
+	{
+		DX_BuildTLAS_FromEntities();
+		g_tlasDirty = false;
+	}
 
 	g_cmdList->SetGraphicsRootSignature(g_rsLighting.Get());
 	g_cmdList->SetPipelineState(g_psoLighting.Get());

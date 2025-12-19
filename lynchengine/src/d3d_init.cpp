@@ -167,9 +167,12 @@ void BuildEditorUI()
             if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size()) {
                 Entity& e = g_entities[g_selectedEntity];
                 ImGui::Text("Transform");
-                ImGui::DragFloat3("Position", &e.pos.x, 0.01f);
-                ImGui::DragFloat3("Rotation (deg)", &e.rotDeg.x, 0.1f);
-                ImGui::DragFloat3("Scale", &e.scale.x, 0.01f, 0.01f, 100.0f);
+
+                bool changed = false;
+                changed |= ImGui::DragFloat3("Position", &e.pos.x, 0.01f);
+                changed |= ImGui::DragFloat3("Rotation (deg)", &e.rotDeg.x, 0.1f);
+                changed |= ImGui::DragFloat3("Scale", &e.scale.x, 0.01f, 0.01f, 100.0f);
+                if (changed) g_tlasDirty = true;
 
                 ImGui::SliderFloat("UV multiplier", &e.uvMul, 0.1f, 32.0f, "%.2f");
 
@@ -178,7 +181,11 @@ void BuildEditorUI()
                         for (UINT i = 0; i < g_meshes.size(); ++i) {
                             bool sel = (e.meshId == i);
                             char buf[32]; sprintf_s(buf, "mesh %u", i);
-                            if (ImGui::Selectable(buf, sel)) e.meshId = i;
+                            if (ImGui::Selectable(buf, sel))
+                            {
+                                e.meshId = i;
+                                g_tlasDirty = true;
+                            }
                             if (sel) ImGui::SetItemDefaultFocus();
                         }
                         ImGui::EndListBox();
@@ -406,7 +413,7 @@ void DX_CreateDeviceAndQueue()
     HR(g_device->CreateCommandQueue(&q, IID_PPV_ARGS(&g_cmdQueue)));
 }
 
-static void DX_BuildBLAS_ForAllMeshes()
+void DX_BuildBLAS_ForAllMeshes()
 {
     if (!g_hasDXR) return;
 
@@ -495,120 +502,169 @@ static void DX_BuildBLAS_ForAllMeshes()
     }
 }
 
-static void DX_BuildTLAS_FromEntities()
+void DX_BuildTLAS_FromEntities()
 {
     if (!g_hasDXR) return;
+
+    const UINT num = (UINT)g_entities.size();
+    if (num == 0)
+    {
+        g_tlasBuiltOnce = false;
+        g_tlas.Reset();
+        return;
+    }
 
     ComPtr<ID3D12GraphicsCommandList4> cl4;
     HR(g_cmdList->QueryInterface(IID_PPV_ARGS(&cl4)));
 
-    std::vector<D3D12_RAYTRACING_INSTANCE_DESC> inst;
-    inst.reserve(g_entities.size());
+    bool needRebuild = false;
 
-    for (UINT i = 0; i < (UINT)g_entities.size(); ++i)
+    if (!g_tlasBuiltOnce || !g_tlas || !g_tlasScratch || !g_tlasInstances)
+        needRebuild = true;
+
+    if (g_tlasCapacity != num)
+        needRebuild = true;
+
+    if (needRebuild)
+    {
+        if (g_tlasInstancesMapped)
+        {
+            g_tlasInstances->Unmap(0, nullptr);
+            g_tlasInstancesMapped = nullptr;
+        }
+
+        g_tlasInstances.Reset();
+        g_tlasScratch.Reset();
+        g_tlas.Reset();
+
+        g_tlasCapacity = num;
+
+        const UINT64 bytes = UINT64(sizeof(D3D12_RAYTRACING_INSTANCE_DESC)) * g_tlasCapacity;
+
+        CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+        auto instDesc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
+
+        HR(g_device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &instDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&g_tlasInstances)));
+
+        HR(g_tlasInstances->Map(0, nullptr, &g_tlasInstancesMapped));
+
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS in = {};
+        in.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+        in.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+        in.NumDescs = g_tlasCapacity;
+        in.InstanceDescs = g_tlasInstances->GetGPUVirtualAddress();
+        in.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
+            D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
+        g_device5->GetRaytracingAccelerationStructurePrebuildInfo(&in, &info);
+
+        CD3DX12_HEAP_PROPERTIES heapDef(D3D12_HEAP_TYPE_DEFAULT);
+
+        auto scratchDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            info.ScratchDataSizeInBytes,
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+        HR(g_device->CreateCommittedResource(
+            &heapDef,
+            D3D12_HEAP_FLAG_NONE,
+            &scratchDesc,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            nullptr,
+            IID_PPV_ARGS(&g_tlasScratch)));
+
+        auto tlasDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            info.ResultDataMaxSizeInBytes,
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+        HR(g_device->CreateCommittedResource(
+            &heapDef,
+            D3D12_HEAP_FLAG_NONE,
+            &tlasDesc,
+            D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+            nullptr,
+            IID_PPV_ARGS(&g_tlas)));
+
+        g_tlasBuiltOnce = true;
+    }
+
+    auto* instGPU = reinterpret_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(g_tlasInstancesMapped);
+
+    for (UINT i = 0; i < num; ++i)
     {
         const Entity& e = g_entities[i];
         const BlasGPU& b = g_blas[e.meshId];
 
         D3D12_RAYTRACING_INSTANCE_DESC d = {};
-        // e.world матрица -> 3x4 row-major
-        XMMATRIX W = XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z) *
-            XMMatrixRotationRollPitchYaw(XMConvertToRadians(e.rotDeg.x),
+        XMMATRIX W =
+            XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z) *
+            XMMatrixRotationRollPitchYaw(
+                XMConvertToRadians(e.rotDeg.x),
                 XMConvertToRadians(e.rotDeg.y),
                 XMConvertToRadians(e.rotDeg.z)) *
             XMMatrixTranslation(e.pos.x, e.pos.y, e.pos.z);
 
         XMFLOAT4X4 wf;
-        XMStoreFloat4x4(&wf, W); // ← БЕЗ XMMatrixTranspose
+        XMStoreFloat4x4(&wf, W);
 
-        d.Transform[0][0] = wf._11; d.Transform[0][1] = wf._12; d.Transform[0][2] = wf._13; d.Transform[0][3] = wf._14;
-        d.Transform[1][0] = wf._21; d.Transform[1][1] = wf._22; d.Transform[1][2] = wf._23; d.Transform[1][3] = wf._24;
-        d.Transform[2][0] = wf._31; d.Transform[2][1] = wf._32; d.Transform[2][2] = wf._33; d.Transform[2][3] = wf._34;
+        d.Transform[0][0] = wf._11; d.Transform[0][1] = wf._12; d.Transform[0][2] = wf._13; d.Transform[0][3] = wf._41;
+        d.Transform[1][0] = wf._21; d.Transform[1][1] = wf._22; d.Transform[1][2] = wf._23; d.Transform[1][3] = wf._42;
+        d.Transform[2][0] = wf._31; d.Transform[2][1] = wf._32; d.Transform[2][2] = wf._33; d.Transform[2][3] = wf._43;
 
         d.InstanceMask = 0xFF;
         d.AccelerationStructure = b.blas->GetGPUVirtualAddress();
+        d.InstanceID = i;
+        d.InstanceContributionToHitGroupIndex = 0;
+        d.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 
-        inst.push_back(d);
+        instGPU[i] = d;
     }
-
-    // upload buffer for instances
-    UINT64 bytes = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * inst.size();
-
-    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
-
-    HR(g_device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &desc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&g_tlasInstances)));
-
-    void* p = nullptr;
-    HR(g_tlasInstances->Map(0, nullptr, &p));
-    memcpy(p, inst.data(), bytes);
-    g_tlasInstances->Unmap(0, nullptr);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS in = {};
     in.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     in.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    in.NumDescs = (UINT)inst.size();
+    in.NumDescs = num;
     in.InstanceDescs = g_tlasInstances->GetGPUVirtualAddress();
-    in.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
-    g_device5->GetRaytracingAccelerationStructurePrebuildInfo(&in, &info);
-
-    CD3DX12_HEAP_PROPERTIES heapDef(D3D12_HEAP_TYPE_DEFAULT);
-    auto scratchDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-    HR(g_device->CreateCommittedResource(
-        &heapDef,
-        D3D12_HEAP_FLAG_NONE,
-        &scratchDesc,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        nullptr,
-        IID_PPV_ARGS(&g_tlasScratch)));
-
-    // result
-    auto tlasDesc = CD3DX12_RESOURCE_DESC::Buffer(
-        info.ResultDataMaxSizeInBytes,
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-    );
-
-    HR(g_device->CreateCommittedResource(
-        &heapDef,
-        D3D12_HEAP_FLAG_NONE,
-        &tlasDesc,
-        D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-        nullptr,
-        __uuidof(ID3D12Resource),
-        reinterpret_cast<void**>(g_tlas.ReleaseAndGetAddressOf())
-    ));
+    if (needRebuild)
+    {
+        in.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
+            D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+    }
+    else
+    {
+        in.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+    }
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build = {};
     build.Inputs = in;
     build.ScratchAccelerationStructureData = g_tlasScratch->GetGPUVirtualAddress();
     build.DestAccelerationStructureData = g_tlas->GetGPUVirtualAddress();
 
+    if (!needRebuild)
+        build.SourceAccelerationStructureData = g_tlas->GetGPUVirtualAddress(); // in-place update
+
     cl4->BuildRaytracingAccelerationStructure(&build, 0, nullptr);
 
     D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(g_tlas.Get());
     g_cmdList->ResourceBarrier(1, &uav);
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC sd = {};
-    sd.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-    sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    sd.RaytracingAccelerationStructure.Location = g_tlas->GetGPUVirtualAddress();
+    if (needRebuild)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC sd = {};
+        sd.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+        sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sd.RaytracingAccelerationStructure.Location = g_tlas->GetGPUVirtualAddress();
 
-    UINT tlasSlot = g_gbufAlbedoSRV + 3;
-
-    g_device->CreateShaderResourceView(
-        nullptr,
-        &sd,
-        SRV_CPU(tlasSlot)
-    );
+        const UINT tlasSlot = g_gbufAlbedoSRV + 3;
+        g_device->CreateShaderResourceView(nullptr, &sd, SRV_CPU(tlasSlot));
+    }
 }
 
 void DX_CreateFenceAndUploadList()
