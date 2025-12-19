@@ -11,6 +11,9 @@ ComPtr<ID3D12Resource>       g_backBuffers[kFrameCount];
 ComPtr<ID3D12CommandAllocator> g_alloc[kFrameCount];
 ComPtr<ID3D12GraphicsCommandList> g_cmdList;
 
+ComPtr<ID3D12Device5> g_device5;
+ComPtr<ID3D12GraphicsCommandList4> g_cmdList4;
+
 ComPtr<ID3D12Fence>          g_fence;
 HANDLE                       g_fenceEvent = nullptr;
 UINT64                       g_fenceValue = 0;
@@ -194,3 +197,20 @@ float    g_atmosphereCleanliness = 0.3f;
 
 XMFLOAT3 g_skyCleanColor = { 0.25f, 0.50f, 1.0f };
 XMFLOAT3 g_skyDirtyColor = { 0.6f, 0.6f, 0.6f };     
+
+bool g_hasDXR = false;
+UINT g_tlasSRV = UINT(-1);
+std::vector<BlasGPU> g_blas;
+
+ComPtr<ID3D12Resource> g_tlas;
+ComPtr<ID3D12Resource> g_tlasScratch;
+ComPtr<ID3D12Resource> g_tlasInstances;
+
+uint32_t g_srvCursor = 0; 
+
+uint32_t AllocSRVRange(uint32_t count)
+{
+    uint32_t base = g_srvCursor;
+    g_srvCursor += count;
+    return base;
+}

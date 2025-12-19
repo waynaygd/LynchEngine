@@ -48,11 +48,74 @@ cbuffer CBLighting : register(b0)
 Texture2D gAlbedo : register(t0);
 Texture2D gNormal : register(t1);
 Texture2D gDepth : register(t2);
-Texture2D gShadowDir : register(t3);
+RaytracingAccelerationStructure gScene : register(t3);
 
 SamplerState gSamp : register(s0);
 SamplerState gSampZ : register(s1);
 
+float2 Hash21(float2 p)
+{
+    float n = dot(p, float2(127.1, 311.7));
+    float m = dot(p, float2(269.5, 183.3));
+    return frac(sin(float2(n, m)) * 43758.5453);
+}
+
+void BuildOrthonormalBasis(float3 n, out float3 t, out float3 b)
+{
+    float3 up = (abs(n.y) < 0.999) ? float3(0, 1, 0) : float3(1, 0, 0);
+    t = normalize(cross(up, n));
+    b = cross(n, t);
+}
+
+float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
+{
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = dir;
+    ray.TMin = tMin;
+    ray.TMax = tMax;
+
+    RayQuery <
+    RAY_FLAG_FORCE_OPAQUE
+    > q;
+
+    q.TraceRayInline(gScene, 0, 0xFF, ray);
+
+    while (q.Proceed())
+    {
+    }
+
+    return (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
+}
+
+float ShadowDirectionalSoft_DXR(float3 Pws, float3 Nws, float3 LdirWs, float2 uv)
+{
+    const float tMin = 0.001;
+    const float tMax = 200.0;
+    const float normalBias = 0.003;
+
+    float3 origin = Pws + Nws * normalBias;
+
+    const float cone = 0.015; // м€гкость
+    const int rays = 8;
+
+    float3 t, b;
+    BuildOrthonormalBasis(LdirWs, t, b);
+
+    float sum = 0.0;
+    [unroll]
+    for (int i = 0; i < rays; ++i)
+    {
+        float2 r = Hash21(uv * (1000.0 + 13.0 * i));
+        float a = 6.2831853 * r.x;
+        float rad = sqrt(max(1e-6, r.y));
+        float2 d = rad * float2(cos(a), sin(a));
+
+        float3 dirVar = normalize(LdirWs + cone * (d.x * t + d.y * b));
+        sum += ShadowRay_DXR(origin, dirVar, tMin, tMax);
+    }
+    return sum / rays;
+}
 
 float3 ReconstructWS(float2 uv, float depth01, float4x4 invVP)
 {
@@ -151,11 +214,14 @@ float ComputeFogFactor(float3 worldPos)
     return saturate(1.0f - exp(-opticalDepth));
 }
 
-float3 ShadeDirectional(in Light L, float3 N, float3 albedo)
+float3 ShadeDirectional(in Light L, float3 P, float3 N, float3 albedo, float2 uv)
 {
-    float3 Ldir = normalize(-L.dirW);
+    float3 Ldir = normalize(-L.dirW); 
     float ndl = saturate(dot(N, Ldir));
-    return albedo * L.color * (L.intensity * ndl);
+
+    float shadow = ShadowDirectionalSoft_DXR(P, N, Ldir, uv);
+
+    return albedo * L.color * (L.intensity * ndl * shadow);
 }
 
 float3 ShadePoint(in Light L, float3 P, float3 N, float3 albedo)
@@ -222,6 +288,7 @@ float4 DebugView(float debugMode, float2 uv)
 
 float4 main(PSIn i) : SV_Target
 {
+    
     if (debugMode >= 1u && debugMode <= 4u)
     {
         float4 dv = DebugView(debugMode, i.uv);
@@ -250,7 +317,7 @@ float4 main(PSIn i) : SV_Target
         Light L = lights[k];
         if (L.type == LIGHT_TYPE_DIR)
         {
-            Lsum += ShadeDirectional(L, N, albedo);
+            Lsum += ShadeDirectional(L, P, N, albedo, i.uv);
         }
         else if (L.type == LIGHT_TYPE_POINT)
             Lsum += ShadePoint(L, P, N, albedo);

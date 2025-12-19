@@ -44,6 +44,9 @@ extern ComPtr<ID3D12Resource>       g_backBuffers[kFrameCount];
 extern ComPtr<ID3D12CommandAllocator> g_alloc[kFrameCount];
 extern ComPtr<ID3D12GraphicsCommandList> g_cmdList;
 
+extern ComPtr<ID3D12Device5> g_device5;
+extern ComPtr<ID3D12GraphicsCommandList4> g_cmdList4;
+
 extern ComPtr<ID3D12Fence>          g_fence;
 extern HANDLE                       g_fenceEvent;
 extern UINT64                       g_fenceValue;
@@ -294,11 +297,30 @@ extern const float dayLength;
 extern float phase;
 extern float angle;
 
+extern bool g_hasDXR;
+extern UINT g_tlasSRV;
+
+// BLAS по мешам (по одному на MeshGPU)
+struct BlasGPU {
+    ComPtr<ID3D12Resource> blas;
+    ComPtr<ID3D12Resource> scratch;
+};
+
+extern std::vector<BlasGPU> g_blas;
+
+extern ComPtr<ID3D12Resource> g_tlas;
+extern ComPtr<ID3D12Resource> g_tlasScratch;
+extern ComPtr<ID3D12Resource> g_tlasInstances;
+
+extern uint32_t g_srvCursor;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();
 
 void UpdateInput(float dt);
+
+uint32_t AllocSRVRange(uint32_t count);
 
 inline void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int line) {
     if (FAILED(hr)) {

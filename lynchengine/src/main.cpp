@@ -82,6 +82,7 @@ void RenderFrame()
 			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
+	/*
 	static float sunTime = 0.0f;
 	sunTime += dt;
 
@@ -95,6 +96,7 @@ void RenderFrame()
 
 	XMFLOAT3 sunDir;
 	XMStoreFloat3(&sunDir, sunDirV);
+	
 
 	for (auto& A : g_lightsAuthor)
 	{
@@ -103,6 +105,7 @@ void RenderFrame()
 			break;
 		}
 	}
+	*/
 
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
