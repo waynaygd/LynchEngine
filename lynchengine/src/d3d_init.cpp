@@ -1426,6 +1426,7 @@ void DX_LoadAssets()
     UINT texZagar = RegisterTextureFromFile(L"assets\\textures\\zagarskih_normal.dds");
     UINT texBogdan = RegisterTextureFromFile(L"assets\\textures\\bogdanov_diffuse.png");
     UINT texArsen = RegisterTextureFromFile(L"assets\\textures\\markaryan_diffuse.png");
+    UINT texSmirnov = RegisterTextureFromFile(L"assets\\textures\\Evgeny_t256.png");
 
     g_texFallbackId = texError;
     g_texDefault = texDefault;
@@ -1433,13 +1434,16 @@ void DX_LoadAssets()
     UINT meshZagarskih = RegisterOBJ(L"assets\\models\\zagarskih.obj");
     UINT meshBodganov = RegisterOBJ(L"assets\\models\\bogdanov.obj");
     UINT meshMarkaryan = RegisterOBJ(L"assets\\models\\markaryan.obj");
-
+ 
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
+    UINT meshSmirnov = RegisterOBJ(L"assets\\models\\Evgeny_Smirnov.obj");
 
-    Scene_AddEntity(meshZagarskih, texZagar, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-    Scene_AddEntity(meshBodganov, texBogdan, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-    Scene_AddEntity(meshMarkaryan, texArsen, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-    Scene_AddEntity(meshSponza, texDefault, { 0,0,0 }, { 0,0,0 }, { 0.01,0.01,0.01 });
+    Scene_AddEntity(meshSponza, texDefault, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 0.01f,0.01f,0.01f });
+    Scene_AddEntity(meshZagarskih, texZagar, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    Scene_AddEntity(meshBodganov, texBogdan, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    Scene_AddEntity(meshMarkaryan, texArsen, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+
+    //Scene_AddEntity(meshSmirnov, texSmirnov, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
 }
 
 void DX_LoadTerrain()
@@ -1651,7 +1655,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     DX_LoadTerrain();
     DX_LoadAssets();
-    DX_AutoLoadScene();
+    //DX_AutoLoadScene();
 
     g_alloc[0]->Reset();
     g_cmdList->Reset(g_alloc[0].Get(), nullptr);

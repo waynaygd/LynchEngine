@@ -94,6 +94,13 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
     return (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
 }
 
+void MakeBasis(float3 n, out float3 t, out float3 b)
+{
+    float3 up = (abs(n.z) < 0.999) ? float3(0, 0, 1) : float3(0, 1, 0);
+    t = normalize(cross(up, n));
+    b = cross(n, t);
+}
+
 float ShadowDirectionalSoft_DXR(float3 Pws, float3 Nws, float3 LdirWs, float2 uv)
 {
     const float tMin = 0.003;
@@ -120,6 +127,52 @@ float ShadowDirectionalSoft_DXR(float3 Pws, float3 Nws, float3 LdirWs, float2 uv
         float3 dirVar = normalize(LdirWs + cone * (d.x * t + d.y * b));
         sum += ShadowRay_DXR(origin, dirVar, tMin, tMax);
     }
+    return sum / rays;
+}
+
+float ShadowPointSoft_DXR(float3 Pws, float3 Nws, float3 lightPosWs, float2 uv)
+{
+    float3 V = lightPosWs - Pws;
+    float dist = length(V);
+    if (dist <= 1e-4)
+        return 1.0;
+
+    float3 Ldir = V / dist;
+
+    const float tMin = 0.003;
+    const float normalBias = 0.006;
+
+    float3 origin = Pws + Nws * normalBias + Ldir * tMin;
+
+    float3 T, B;
+    MakeBasis(Ldir, T, B);
+
+    const int rays = 12;
+    float lightRadius = 0.02 * dist;
+    lightRadius = min(lightRadius, 0.25);
+
+    float sum = 0.0;
+
+    [unroll]
+    for (int i = 0; i < rays; ++i)
+    {
+        float2 r = Hash21(uv * 2048.0 + float2(37.0 * i, 17.0 * i));
+
+        float a = 6.2831853 * r.x;
+        float rad = sqrt(max(1e-6, r.y));
+        float2 d2 = rad * float2(cos(a), sin(a));
+
+        float3 lp = lightPosWs + lightRadius * (d2.x * T + d2.y * B);
+
+        float3 VV = lp - Pws;
+        float dd = length(VV);
+        float3 dir2 = VV / max(dd, 1e-6);
+
+        float tMax = max(0.0, dd - tMin);
+
+        sum += ShadowRay_DXR(origin, dir2, tMin, tMax);
+    }
+
     return sum / rays;
 }
 
@@ -230,7 +283,7 @@ float3 ShadeDirectional(in Light L, float3 P, float3 N, float3 albedo, float2 uv
     return albedo * L.color * (L.intensity * ndl * shadow);
 }
 
-float3 ShadePoint(in Light L, float3 P, float3 N, float3 albedo)
+float3 ShadePoint(in Light L, float3 P, float3 N, float3 albedo, float2 uv)
 {
     float3 V = L.posW - P;
     float d = length(V);
@@ -243,10 +296,12 @@ float3 ShadePoint(in Light L, float3 P, float3 N, float3 albedo)
     float atten = saturate(1.0 - d / L.radius);
     atten = atten * atten;
 
-    return albedo * L.color * (L.intensity * ndl * atten);
+    float shadow = ShadowPointSoft_DXR(P, N, L.posW, uv);
+
+    return albedo * L.color * (L.intensity * ndl * atten * shadow);
 }
 
-float3 ShadeSpot(in Light L, float3 P, float3 N, float3 albedo)
+float3 ShadeSpot(in Light L, float3 P, float3 N, float3 albedo, float2 uv)
 {
     float3 V = L.posW - P;
     float d = length(V);
@@ -263,7 +318,12 @@ float3 ShadeSpot(in Light L, float3 P, float3 N, float3 albedo)
     float spot = saturate((c - L.cosOuter) / max(L.cosInner - L.cosOuter, 1e-4));
     spot = spot * spot;
 
-    return albedo * L.color * (L.intensity * ndl * atten * spot);
+    if (spot <= 1e-4)
+        return 0.0;
+
+    float shadow = ShadowPointSoft_DXR(P, N, L.posW, uv);
+
+    return albedo * L.color * (L.intensity * ndl * atten * spot * shadow);
 }
 
 
@@ -326,9 +386,9 @@ float4 main(PSIn i) : SV_Target
             Lsum += ShadeDirectional(L, P, N, albedo, i.uv);
         }
         else if (L.type == LIGHT_TYPE_POINT)
-            Lsum += ShadePoint(L, P, N, albedo);
+            Lsum += ShadePoint(L, P, N, albedo, i.uv);
         else
-            Lsum += ShadeSpot(L, P, N, albedo);
+            Lsum += ShadeSpot(L, P, N, albedo, i.uv);
     }
 
     float3 ambient = albedo * 0.03;

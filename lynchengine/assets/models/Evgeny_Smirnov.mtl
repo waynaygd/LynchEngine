@@ -1,0 +1,12 @@
+# Blender 5.0.1 MTL File: 'Evgeny Smirnov.blend'
+# www.blender.org
+
+newmtl hero.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd D:/Downloads/Telegram Desktop/PSX Evgeny_Smirnov/Texture/Evgeny_t256.png
+map_d D:/Downloads/Telegram Desktop/PSX Evgeny_Smirnov/Texture/Evgeny_t256.png
