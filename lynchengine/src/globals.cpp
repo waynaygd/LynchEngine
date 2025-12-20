@@ -83,6 +83,10 @@ bool g_terrainonetile = 0;
 bool g_terrainshow_wireframe = 0;
 
 float g_uvMul = 1.0f;
+int   g_alphaShadowEntity = -1;
+int   g_alphaShadowTexId = -1;
+float g_alphaShadowCutoff = 0.5f;
+float g_alphaShadowUvScale = 1.0f;
 
 int   uiGridN = 256;     
 float uiWorldSize = 800.f;  

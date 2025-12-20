@@ -31,6 +31,11 @@ cbuffer CBLighting : register(b0)
     float4x4 invViewProj;
     float4x4 dirLightVP;
     
+    uint alphaShadowEntity; 
+    uint alphaShadowTexId;
+    float alphaShadowCutoff;
+    float alphaShadowUvScale;
+    
     float3 gFogColor;
     float gFogDensity;
     float gFogStartDistance;
@@ -49,6 +54,8 @@ Texture2D gAlbedo : register(t0);
 Texture2D gNormal : register(t1);
 Texture2D gDepth : register(t2);
 RaytracingAccelerationStructure gScene : register(t3);
+
+Texture2D gTex[] : register(t4);
 
 SamplerState gSamp : register(s0);
 SamplerState gSampZ : register(s1);
@@ -76,22 +83,50 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
     ray.TMax = tMax;
 
     RayQuery <
-        RAY_FLAG_FORCE_OPAQUE |
+        RAY_FLAG_FORCE_NON_OPAQUE |
         RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
     > q;
 
     q.TraceRayInline(gScene, 0, 0xFF, ray);
 
+    const bool alphaEnabled = (alphaShadowEntity != 0xFFFFFFFFu);
+
     while (q.Proceed())
     {
-        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            q.Abort();
-            break;
+            bool isAlphaCaster = alphaEnabled && (q.CandidateInstanceID() == alphaShadowEntity);
+
+            if (isAlphaCaster)
+            {
+                float t = q.CandidateTriangleRayT();
+                float3 hitWS = origin + dir * t;
+
+                float2 uv = hitWS.xz * alphaShadowUvScale;
+
+                uint texSlot = (alphaShadowTexId >= 4u) ? (alphaShadowTexId - 4u) : 0u;
+
+                float a = gTex[texSlot].SampleLevel(gSamp, uv, 0).a;
+
+                if (a < alphaShadowCutoff)
+                {
+                    
+                }
+                else
+                {
+                    q.CommitNonOpaqueTriangleHit();
+                    return 0.0; 
+                }
+            }
+            else
+            {
+                q.CommitNonOpaqueTriangleHit();
+                return 0.0;
+            }
         }
     }
 
-    return (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
+    return 1.0;
 }
 
 void MakeBasis(float3 n, out float3 t, out float3 b)

@@ -352,6 +352,11 @@ void RenderFrame()
 	L.debugMode = float(g_gbufDebugMode);
 	XMStoreFloat4x4(&L.dirLightVP, XMMatrixTranspose(lightVP));
 
+	L.alphaShadowEntity = (g_alphaShadowEntity >= 0) ? (UINT)g_alphaShadowEntity : 0xFFFFFFFFu;
+	L.alphaShadowTexId = (g_alphaShadowTexId >= 0) ? (UINT)g_alphaShadowTexId : 0u;
+	L.alphaShadowCutoff = g_alphaShadowCutoff;
+	L.alphaShadowUvScale = g_alphaShadowUvScale;
+
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
 	for (auto& A : g_lightsAuthor) if (A.type != LT_Point)
 		XMStoreFloat3(&A.dirW, XMVector3Normalize(XMLoadFloat3(&A.dirW)));

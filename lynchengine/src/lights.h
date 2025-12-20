@@ -33,6 +33,11 @@ struct CBLighting {
     XMFLOAT4X4 invViewProj; 
     XMFLOAT4X4 dirLightVP;
 
+    UINT  alphaShadowEntity;  
+    UINT  alphaShadowTexId;
+    float alphaShadowCutoff;
+    float alphaShadowUvScale;
+
     XMFLOAT3 fogColor;           float fogDensity;          
 
     float    fogStartDistance;   float fogHeightFalloff; 

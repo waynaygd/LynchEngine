@@ -145,6 +145,10 @@ enum : int { ADDR_WRAP = 0, ADDR_MIRROR, ADDR_CLAMP, ADDR_BORDER, ADDR_MIRROR_ON
 enum : int { FILT_POINT = 0, FILT_LINEAR, FILT_ANISO, FILT_COUNT = 3 };
 
 extern float g_uvMul;
+extern int   g_alphaShadowEntity;  
+extern int   g_alphaShadowTexId;    
+extern float g_alphaShadowCutoff;  
+extern float g_alphaShadowUvScale; 
 
 UINT RegisterTextureFromFile(const std::wstring& path); 
 UINT RegisterOBJ(const std::wstring& path);             
@@ -325,7 +329,7 @@ void WaitForGPU();
 
 void UpdateInput(float dt);
 
-inline void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int line) {
+inline  void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int line) {
     if (FAILED(hr)) {
         _com_error err(hr);
         std::wstringstream wss;

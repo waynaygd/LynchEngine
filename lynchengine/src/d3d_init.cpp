@@ -282,6 +282,29 @@ void BuildEditorUI()
                     g_selectedLight = -1;
                 }
             }
+            ImGui::Separator();
+            ImGui::Text("DXR Alpha Shadow (alpha-masked)");
+
+            ImGui::InputInt("Alpha caster entity", &g_alphaShadowEntity);
+            ImGui::InputInt("Alpha caster tex SRV id", &g_alphaShadowTexId);
+            ImGui::SliderFloat("Alpha cutoff", &g_alphaShadowCutoff, 0.0f, 1.0f);
+            ImGui::DragFloat("Alpha UV scale (XZ)", &g_alphaShadowUvScale, 0.01f, 0.0f, 100.0f);
+
+            if (ImGui::Button("Use selected entity as alpha caster"))
+            {
+                if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size())
+                {
+                    g_alphaShadowEntity = g_selectedEntity;
+                    g_alphaShadowTexId = (int)g_entities[g_selectedEntity].texId;
+                    g_alphaShadowUvScale = g_entities[g_selectedEntity].uvMul;
+                }
+            }
+
+            if (ImGui::Button("Disable alpha caster"))
+            {
+                g_alphaShadowEntity = -1;
+                g_alphaShadowTexId = -1;
+            }
 
             ImGui::EndTabItem();
         }
@@ -889,7 +912,7 @@ void CreateLightingRSandPSO()
 {
     D3D12_DESCRIPTOR_RANGE range{};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 4;     
+    range.NumDescriptors = 256;     
     range.BaseShaderRegister = 0;
     range.RegisterSpace = 0;
     range.OffsetInDescriptorsFromTableStart = 0;
@@ -1427,6 +1450,7 @@ void DX_LoadAssets()
     UINT texBogdan = RegisterTextureFromFile(L"assets\\textures\\bogdanov_diffuse.png");
     UINT texArsen = RegisterTextureFromFile(L"assets\\textures\\markaryan_diffuse.png");
     UINT texSmirnov = RegisterTextureFromFile(L"assets\\textures\\Evgeny_t256.png");
+    UINT texGrass = RegisterTextureFromFile(L"assets\\textures\\grass.png");
 
     g_texFallbackId = texError;
     g_texDefault = texDefault;
