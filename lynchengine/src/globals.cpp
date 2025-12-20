@@ -219,3 +219,5 @@ bool g_meshShadersSupported = false;
 
 bool g_useMeshlets = true;
 bool g_debugMeshlets = false;
+
+bool b_daycycle = false;

@@ -82,26 +82,28 @@ void RenderFrame()
 			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
 
-	static float sunTime = 0.0f;
-	sunTime += dt;
+	if (b_daycycle) {
+		static float sunTime = 0.0f;
+		sunTime += dt;
 
-	const float dayLength = 30.0f;         
-	float tCycle = fmodf(sunTime, dayLength);
-	float phase = tCycle / dayLength; 
-	float angle = phase * XM_2PI;   
+		const float dayLength = 30.0f;
+		float tCycle = fmodf(sunTime, dayLength);
+		float phase = tCycle / dayLength;
+		float angle = phase * XM_2PI;
 
-	XMFLOAT3 sunPos = { 0.0f, sinf(angle), cosf(angle) };
-	XMVECTOR sunDirV = XMVector3Normalize(XMVectorSet(-sunPos.x, -sunPos.y, -sunPos.z, 0.0f));
+		XMFLOAT3 sunPos = { 0.0f, sinf(angle), cosf(angle) };
+		XMVECTOR sunDirV = XMVector3Normalize(XMVectorSet(-sunPos.x, -sunPos.y, -sunPos.z, 0.0f));
 
-	XMFLOAT3 sunDir;
-	XMStoreFloat3(&sunDir, sunDirV);
-	
+		XMFLOAT3 sunDir;
+		XMStoreFloat3(&sunDir, sunDirV);
 
-	for (auto& A : g_lightsAuthor)
-	{
-		if (A.type == LT_Dir) {
-			A.dirW = sunDir;
-			break;
+
+		for (auto& A : g_lightsAuthor)
+		{
+			if (A.type == LT_Dir) {
+				A.dirW = sunDir;
+				break;
+			}
 		}
 	}
 

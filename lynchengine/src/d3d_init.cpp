@@ -966,8 +966,8 @@ void CreateLightingRSandPSO()
     HR(g_device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
         IID_PPV_ARGS(&g_rsLighting)));
 
-    auto lvs = CompileShaderDXC(L"shaders\\light_vs.hlsl", L"main", L"vs_6_6");
-    auto lps = CompileShaderDXC(L"shaders\\light_ps.hlsl", L"main", L"ps_6_6");
+    auto lvs = CompileShaderDXC(L"shaders\\light_vs.hlsl", L"main", L"vs_6_7");
+    auto lps = CompileShaderDXC(L"shaders\\light_ps.hlsl", L"main", L"ps_6_7");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
     pso.pRootSignature = g_rsLighting.Get();
@@ -1615,6 +1615,7 @@ void DX_LoadAssets()
     UINT texBogdan = RegisterTextureFromFile(L"assets\\textures\\bogdanov_diffuse.png");
     UINT texArsen = RegisterTextureFromFile(L"assets\\textures\\markaryan_diffuse.png");
     UINT texSmirnov = RegisterTextureFromFile(L"assets\\textures\\Evgeny_t256.png");
+    UINT texGrass = RegisterTextureFromFile(L"assets\\textures\\grass.png");
 
     g_texFallbackId = texError;
     g_texDefault = texDefault;
@@ -1863,7 +1864,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     DX_CreateRootSigAndPSO();
     DX_InitCamera(w, h);
 
-    DX_AutoLoadScene();
+    //DX_AutoLoadScene();
 
     g_dxReady = true;
 

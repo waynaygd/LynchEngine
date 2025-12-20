@@ -325,6 +325,8 @@ extern bool g_meshShadersSupported;
 extern bool g_useMeshlets;
 extern bool g_debugMeshlets;
 
+extern bool b_daycycle;
+
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();
 void WaitForGPU();
