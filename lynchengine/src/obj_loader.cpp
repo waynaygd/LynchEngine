@@ -20,6 +20,59 @@ static void DebugLog(const char* fmt, ...)
     OutputDebugStringA(buf);
 }
 
+static void ValidateMeshlets(
+    const std::vector<MeshletGPU>& meshlets,
+    const std::vector<uint32_t>& unique,
+    const std::vector<uint32_t>& prims,
+    uint32_t indexCountOrWhatever)
+{
+    for (size_t mi = 0; mi < meshlets.size(); ++mi)
+    {
+        const auto& m = meshlets[mi];
+
+        if (m.vertCount > 64)  throw std::runtime_error("meshlet vertCount > 64");
+        if (m.primCount > 126) throw std::runtime_error("meshlet primCount > 126");
+
+        if (m.vertOffset + m.vertCount > unique.size())
+            throw std::runtime_error("meshlet unique range OOB");
+
+        size_t primBase = size_t(m.primOffset) * 3;
+        if (primBase + size_t(m.primCount) * 3 > prims.size())
+            throw std::runtime_error("meshlet prim range OOB");
+
+        for (uint32_t p = 0; p < m.primCount; ++p)
+        {
+            uint32_t i0 = prims[primBase + p * 3 + 0];
+            uint32_t i1 = prims[primBase + p * 3 + 1];
+            uint32_t i2 = prims[primBase + p * 3 + 2];
+
+            if (i0 >= m.vertCount || i1 >= m.vertCount || i2 >= m.vertCount)
+                throw std::runtime_error("meshlet prim index >= vertCount");
+        }
+    }
+}
+
+static void ValidateRanges(const std::vector<MeshGPU::MeshletRange>& ranges, uint32_t meshletCount)
+{
+    std::vector<uint8_t> covered(meshletCount, 0);
+
+    for (auto& r : ranges)
+    {
+        if (r.count == 0) throw std::runtime_error("meshletRange count==0");
+        if (r.first >= meshletCount) throw std::runtime_error("meshletRange first out of bounds");
+        if (r.first + r.count > meshletCount) throw std::runtime_error("meshletRange first+count out of bounds");
+
+        for (uint32_t i = 0; i < r.count; ++i)
+            covered[r.first + i] = 1;
+    }
+
+    uint32_t miss = 0;
+    for (uint32_t i = 0; i < meshletCount; ++i) if (!covered[i]) ++miss;
+
+    if (miss)
+        throw std::runtime_error("meshletRanges do not cover all meshlets");
+}
+
 static std::string Narrow(const std::wstring& w) {
     int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
     std::string s(len - 1, '\0');
@@ -292,10 +345,12 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             unique,
             prims,
             r);
-     
 
         if (r.count > 0) ranges.push_back(r);
     }
+
+    ValidateRanges(ranges, (uint32_t)meshlets.size());
+    ValidateMeshlets(meshlets, unique, prims, out.indexCount);
 
     out.meshletRanges = std::move(ranges);
 
@@ -514,9 +569,17 @@ static void BuildMeshletsGreedy(
 
             MeshletGPU ml{};
             ml.vertOffset = (uint32_t)outUnique.size();
-            ml.vertCount = (uint32_t)localUnique.size();
             ml.primOffset = (uint32_t)(outPrims.size() / 3);
-            ml.primCount = (uint32_t)(localPrims.size() / 3);
+
+            uint32_t primCount = (uint32_t)(localPrims.size() / 3);
+            uint32_t vertCount = (uint32_t)localUnique.size();
+
+            if (vertCount > maxVerts) throw std::runtime_error("flush(): vertCount > maxVerts (bug)");
+            if (primCount > maxPrims) throw std::runtime_error("flush(): primCount > maxPrims (bug)");
+
+
+            ml.vertCount = vertCount;
+            ml.primCount = primCount;
 
             ml.materialId = materialId;
 
@@ -548,18 +611,34 @@ static void BuildMeshletsGreedy(
         uint32_t i1 = indices32[indexOffset + t * 3 + 1];
         uint32_t i2 = indices32[indexOffset + t * 3 + 2];
 
-        auto canAddVert = [&](uint32_t v)->bool
+        // если meshlet уже полон по примитивам — сразу flush
+        if (localPrims.size() / 3 >= maxPrims)
+            flush(localUnique, remap, localPrims);
+
+        auto needVerts = [&](uint32_t a, uint32_t b, uint32_t c)->uint32_t
             {
-                if (remap.find(v) != remap.end()) return true;
-                return localUnique.size() + 1 <= maxVerts;
+                uint32_t need = 0;
+                if (remap.find(a) == remap.end()) ++need;
+                if (remap.find(b) == remap.end()) ++need;
+                if (remap.find(c) == remap.end()) ++need;
+                // поправка на совпадающие индексы внутри триса
+                if (a == b) --need;
+                if (a == c) --need;
+                if (b == c) --need;
+                return need;
             };
 
-        bool fitsVerts = canAddVert(i0) && canAddVert(i1) && canAddVert(i2);
-        bool fitsPrims = (localPrims.size() / 3 + 1 <= maxPrims);
+        uint32_t need = needVerts(i0, i1, i2);
 
-        if (!fitsVerts || !fitsPrims)
+        // если по вершинам не влезает — flush и пересчёт на пустом meshlet
+        if (localUnique.size() + need > maxVerts)
         {
             flush(localUnique, remap, localPrims);
+            need = needVerts(i0, i1, i2);
+
+            // если даже в пустой meshlet не влезает (теоретически не должно случаться при maxVerts>=3)
+            if (need > maxVerts)
+                throw std::runtime_error("triangle doesn't fit into empty meshlet");
         }
 
         auto getLocal = [&](uint32_t v)->uint32_t
