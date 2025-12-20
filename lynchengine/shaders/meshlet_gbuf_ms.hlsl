@@ -55,10 +55,8 @@ void main(
     uint meshletId = firstMeshlet + gid.x;
     MeshletGPU ml = gMeshlets[meshletId];
 
-    // выдаём количество примитивов/вершин
     SetMeshOutputCounts(ml.vertCount, ml.primCount);
 
-    // вершины
     if (tid.x < ml.vertCount + 16)
     {
         uint vIdx = gUnique[ml.vertOffset + tid.x];
@@ -68,7 +66,6 @@ void main(
         float4 posV = mul(posW, V);
         float4 posH = mul(posV, P);
 
-        // TAA jitter в NDC (как у тебя): просто сдвиг SV_Position в clip-space
         posH.xy += posH.w * jitter;
 
         float3 nW = normalize(mul(float4(v.nrm, 0.0), MIT).xyz);

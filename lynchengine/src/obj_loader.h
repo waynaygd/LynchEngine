@@ -4,7 +4,7 @@
 #include "mesh.h"
 #include "uploader.h"
 
-#include <commdlg.h>   // GetOpenFileNameW
+#include <commdlg.h>   
 #pragma comment(lib, "Comdlg32.lib")
 
 bool LoadOBJToGPU(

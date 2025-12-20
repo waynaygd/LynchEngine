@@ -611,7 +611,6 @@ static void BuildMeshletsGreedy(
         uint32_t i1 = indices32[indexOffset + t * 3 + 1];
         uint32_t i2 = indices32[indexOffset + t * 3 + 2];
 
-        // если meshlet уже полон по примитивам — сразу flush
         if (localPrims.size() / 3 >= maxPrims)
             flush(localUnique, remap, localPrims);
 
@@ -621,7 +620,7 @@ static void BuildMeshletsGreedy(
                 if (remap.find(a) == remap.end()) ++need;
                 if (remap.find(b) == remap.end()) ++need;
                 if (remap.find(c) == remap.end()) ++need;
-                // поправка на совпадающие индексы внутри триса
+
                 if (a == b) --need;
                 if (a == c) --need;
                 if (b == c) --need;
@@ -630,13 +629,11 @@ static void BuildMeshletsGreedy(
 
         uint32_t need = needVerts(i0, i1, i2);
 
-        // если по вершинам не влезает — flush и пересчёт на пустом meshlet
         if (localUnique.size() + need > maxVerts)
         {
             flush(localUnique, remap, localPrims);
             need = needVerts(i0, i1, i2);
 
-            // если даже в пустой meshlet не влезает (теоретически не должно случаться при maxVerts>=3)
             if (need > maxVerts)
                 throw std::runtime_error("triangle doesn't fit into empty meshlet");
         }

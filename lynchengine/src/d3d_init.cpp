@@ -17,29 +17,6 @@
 #include <cstdint>
 #include <cstring>
 
-static void StreamAlign(std::vector<uint8_t>& s)
-{
-    const size_t a = alignof(void*);
-    size_t mis = s.size() % a;
-    if (mis) s.insert(s.end(), a - mis, 0);
-}
-
-template<class T>
-static void StreamAppend(std::vector<uint8_t>& s, const T& v)
-{
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
-    s.insert(s.end(), p, p + sizeof(T));
-}
-
-// добавляет один subobject: TYPE + DATA (с нужным выравниванием)
-template<class T>
-static void AddSubobject(std::vector<uint8_t>& s, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE type, const T& data)
-{
-    StreamAlign(s);
-    StreamAppend(s, type);
-    StreamAppend(s, data);
-}
-
 static ComPtr<ID3DBlob> CompileShaderDXC(
     const std::wstring& path,
     const wchar_t* entry,
@@ -84,7 +61,6 @@ static ComPtr<ID3DBlob> CompileShaderDXC(
     ComPtr<IDxcBlob> dxil;
     HR(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxil), nullptr));
 
-    // Заворачиваем в ID3DBlob, чтобы дальше твой код PSO не менять
     ComPtr<ID3DBlob> blob;
     HR(D3DCreateBlob(dxil->GetBufferSize(), &blob));
     memcpy(blob->GetBufferPointer(), dxil->GetBufferPointer(), dxil->GetBufferSize());
@@ -356,22 +332,19 @@ void BuildEditorUI()
             if (!g_meshShadersSupported)
             {
                 ImGui::TextColored(ImVec4(1, 0, 0, 1), "Mesh Shaders NOT supported");
-                g_useMeshlets = false; // чтобы не пытаться включить невозможное
+                g_useMeshlets = false; 
             }
             else
             {
                 ImGui::TextColored(ImVec4(0, 1, 0, 1), "Mesh Shaders supported");
                 ImGui::Checkbox("Debug Meshlets", &g_debugMeshlets);
 
-                // Быстрый дебаг: показать, сколько мешлетов у выбранного меша
                 if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size())
                 {
                     const Entity& e = g_entities[g_selectedEntity];
                     if (e.meshId < g_meshes.size())
                     {
                         const MeshGPU& m = g_meshes[e.meshId];
-                        // подстрой под своё имя поля: meshletRanges / meshlets / meshletCount
-                        // я вижу у тебя в коде фигурирует meshletRanges, так что делай так:
                         ImGui::Text("Selected meshId = %u", e.meshId);
                         ImGui::Text("Meshlets: %d", (int)m.meshletRanges.size());
                     }
@@ -423,10 +396,6 @@ void DX_CreateDeviceAndQueue()
                 break;
             }
         }
-    }
-    else
-    {
-        // fallback: старый путь (см. ниже вариант 2)
     }
 
     DXGI_ADAPTER_DESC1 d{};
@@ -561,7 +530,6 @@ void DX_BuildBLAS_ForAllMeshes()
 
         cl4->BuildRaytracingAccelerationStructure(&build, 0, nullptr);
 
-        // UAV barrier
         D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(g_blas[i].blas.Get());
         g_cmdList->ResourceBarrier(1, &uav);
     }
@@ -713,7 +681,7 @@ void DX_BuildTLAS_FromEntities()
     build.DestAccelerationStructureData = g_tlas->GetGPUVirtualAddress();
 
     if (!needRebuild)
-        build.SourceAccelerationStructureData = g_tlas->GetGPUVirtualAddress(); // in-place update
+        build.SourceAccelerationStructureData = g_tlas->GetGPUVirtualAddress();
 
     cl4->BuildRaytracingAccelerationStructure(&build, 0, nullptr);
 
@@ -849,7 +817,7 @@ void DX_CreateGBuffer(UINT w, UINT h)
     UINT base0 = SRV_Alloc();  
     UINT base1 = SRV_Alloc();  
     UINT base2 = SRV_Alloc(); 
-    UINT base3 = SRV_Alloc();  // t3 TLAS (заполним позже)
+    UINT base3 = SRV_Alloc();  
 
     assert(base1 == base0 + 1 && base2 == base0 + 2 && base3 == base0 + 3);
 
@@ -1280,37 +1248,31 @@ void CreateMeshletGBufferRSandPSO()
     rTex.RegisterSpace = 1;
     rTex.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    // было 3, станет 5
     D3D12_ROOT_PARAMETER rp[5]{};
 
-    // b0: пер-объект
     rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rp[0].Descriptor.ShaderRegister = 0;
     rp[0].Descriptor.RegisterSpace = 0;
     rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
 
-    // t0..t3 space0: vertices/meshlets/unique/prims
     rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rp[1].DescriptorTable.NumDescriptorRanges = 1;
     rp[1].DescriptorTable.pDescriptorRanges = &rMeshSRV;
     rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
 
-    // t0 space1: texture
     rp[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rp[2].DescriptorTable.NumDescriptorRanges = 1;
     rp[2].DescriptorTable.pDescriptorRanges = &rTex;
     rp[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // root constants b1: firstMeshlet (1 uint)
     rp[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    rp[3].Constants.ShaderRegister = 1;   // b1
+    rp[3].Constants.ShaderRegister = 1;  
     rp[3].Constants.RegisterSpace = 0;
     rp[3].Constants.Num32BitValues = 1;
     rp[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
 
-    // root constants b2: debugMeshlets (1 uint)
     rp[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    rp[4].Constants.ShaderRegister = 2;   // b2
+    rp[4].Constants.ShaderRegister = 2; 
     rp[4].Constants.RegisterSpace = 0;
     rp[4].Constants.Num32BitValues = 1;
     rp[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -1348,7 +1310,6 @@ void CreateMeshletGBufferRSandPSO()
     D3D12_SHADER_BYTECODE msBC{ ms->GetBufferPointer(), ms->GetBufferSize() };
     D3D12_SHADER_BYTECODE psBC{ ps->GetBufferPointer(), ps->GetBufferSize() };
 
-    // дефолтные стейты
     D3D12_BLEND_DESC blend{};
     blend.AlphaToCoverageEnable = FALSE;
     blend.IndependentBlendEnable = FALSE;
@@ -1390,7 +1351,6 @@ void CreateMeshletGBufferRSandPSO()
     DXGI_FORMAT dsvFmt = g_depthFormat;
     D3D12_PRIMITIVE_TOPOLOGY_TYPE topo = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-    // ВАЖНО: root signature payload - это просто pointer, но как Data в Subobject<ID3D12RootSignature*>
     Subobject<ID3D12RootSignature*> soRoot{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, g_rsMeshletGBuffer.Get() };
     Subobject<D3D12_SHADER_BYTECODE> soMS{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, msBC };
     Subobject<D3D12_SHADER_BYTECODE> soPS{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, psBC };
@@ -1402,8 +1362,6 @@ void CreateMeshletGBufferRSandPSO()
     Subobject<DXGI_FORMAT> soDSV{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, dsvFmt };
     Subobject<DXGI_SAMPLE_DESC> soSample{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, sample };
 
-    // теперь делаем "поток" как массив байтов из этих subobjectов подряд
-    // Поскольку каждый Subobject выровнен по void*, парсер D3D12 не съедет.
     struct Stream
     {
         decltype(soRoot)   a;
@@ -1667,13 +1625,15 @@ void DX_LoadAssets()
  
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
     UINT meshSmirnov = RegisterOBJ(L"assets\\models\\Evgeny_Smirnov.obj");
+    UINT meshMustang = RegisterOBJ(L"assets\\models\\Mustang.obj");
 
     Scene_AddEntity(meshSponza, texDefault, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 0.01f,0.01f,0.01f });
     Scene_AddEntity(meshZagarskih, texZagar, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
     Scene_AddEntity(meshBodganov, texBogdan, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
     Scene_AddEntity(meshMarkaryan, texArsen, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
 
-    //Scene_AddEntity(meshSmirnov, texSmirnov, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    Scene_AddEntity(meshSmirnov, texSmirnov, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    Scene_AddEntity(meshMustang, texDefault, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
 }
 
 void DX_LoadTerrain()
@@ -1731,6 +1691,8 @@ void DX_AutoLoadScene()
             OutputDebugStringA("Auto-save default scene failed at startup\n");
         }
     }
+
+    g_tlasDirty = true;
 }
 
 
@@ -1886,7 +1848,6 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     DX_LoadTerrain();
     DX_LoadAssets();
-    //DX_AutoLoadScene();
 
     g_alloc[0]->Reset();
     g_cmdList->Reset(g_alloc[0].Get(), nullptr);
@@ -1901,6 +1862,8 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
 
     DX_CreateRootSigAndPSO();
     DX_InitCamera(w, h);
+
+    DX_AutoLoadScene();
 
     g_dxReady = true;
 

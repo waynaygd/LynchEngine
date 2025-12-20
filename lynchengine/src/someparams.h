@@ -300,7 +300,6 @@ extern float angle;
 extern bool g_hasDXR;
 extern UINT g_tlasSRV;
 
-// BLAS по мешам (по одному на MeshGPU)
 struct BlasGPU {
     ComPtr<ID3D12Resource> blas;
     ComPtr<ID3D12Resource> scratch;
