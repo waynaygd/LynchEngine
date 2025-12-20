@@ -18,6 +18,7 @@ void CreateGBufferRSandPSO();
 void CreateLightingRSandPSO();
 void CreateTerrainRSandPSO();
 void CreateTAARSandPSO();
+void CreateMeshletGBufferRSandPSO();
 void DX_CreateDepth(UINT w, UINT h);
 void DX_CreateSRVHeap(UINT numDescriptors = 1);
 void DX_CreateImGuiHeap();
@@ -68,4 +69,16 @@ XMMATRIX MakeDirLightVP(XMVECTOR lightDir, XMFLOAT3 sceneCenter, float sceneHalf
 
 void DX_BuildBLAS_ForAllMeshes();
 void DX_BuildTLAS_FromEntities();
+
+struct alignas(void*) SubobjectHeader
+{
+    D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Type;
+};
+
+template<typename T>
+struct alignas(void*) Subobject
+{
+    D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Type;
+    T Data;
+};
 

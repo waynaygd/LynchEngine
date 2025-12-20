@@ -13,6 +13,33 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "DirectXTex.lib")
 
+#include <vector>
+#include <cstdint>
+#include <cstring>
+
+static void StreamAlign(std::vector<uint8_t>& s)
+{
+    const size_t a = alignof(void*);
+    size_t mis = s.size() % a;
+    if (mis) s.insert(s.end(), a - mis, 0);
+}
+
+template<class T>
+static void StreamAppend(std::vector<uint8_t>& s, const T& v)
+{
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+    s.insert(s.end(), p, p + sizeof(T));
+}
+
+// добавляет один subobject: TYPE + DATA (с нужным выравниванием)
+template<class T>
+static void AddSubobject(std::vector<uint8_t>& s, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE type, const T& data)
+{
+    StreamAlign(s);
+    StreamAppend(s, type);
+    StreamAppend(s, data);
+}
+
 static ComPtr<ID3DBlob> CompileShaderDXC(
     const std::wstring& path,
     const wchar_t* entry,
@@ -322,6 +349,38 @@ void BuildEditorUI()
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("Renderer"))
+        {
+            ImGui::Checkbox("Use Mesh Shaders (Meshlets)", &g_useMeshlets);
+
+            if (!g_meshShadersSupported)
+            {
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Mesh Shaders NOT supported");
+                g_useMeshlets = false; // чтобы не пытаться включить невозможное
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(0, 1, 0, 1), "Mesh Shaders supported");
+                ImGui::Checkbox("Debug Meshlets", &g_debugMeshlets);
+
+                // Быстрый дебаг: показать, сколько мешлетов у выбранного меша
+                if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size())
+                {
+                    const Entity& e = g_entities[g_selectedEntity];
+                    if (e.meshId < g_meshes.size())
+                    {
+                        const MeshGPU& m = g_meshes[e.meshId];
+                        // подстрой под своё имя поля: meshletRanges / meshlets / meshletCount
+                        // я вижу у тебя в коде фигурирует meshletRanges, так что делай так:
+                        ImGui::Text("Selected meshId = %u", e.meshId);
+                        ImGui::Text("Meshlets: %d", (int)m.meshletRanges.size());
+                    }
+                }
+            }
+
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 
@@ -409,6 +468,12 @@ void DX_CreateDeviceAndQueue()
     swprintf_s(b2, L"[DX12] Raytracing Tier = %u\n", opt5.RaytracingTier);
     OutputDebugStringW(b2);
 
+    D3D12_FEATURE_DATA_D3D12_OPTIONS7 opt7{};
+    if (SUCCEEDED(g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &opt7, sizeof(opt7))))
+    {
+        g_meshShadersSupported = (opt7.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED);
+    }
+
     D3D12_COMMAND_QUEUE_DESC q{}; q.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     HR(g_device->CreateCommandQueue(&q, IID_PPV_ARGS(&g_cmdQueue)));
 }
@@ -468,7 +533,7 @@ void DX_BuildBLAS_ForAllMeshes()
             &heapDef,
             D3D12_HEAP_FLAG_NONE,
             &scratchDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             __uuidof(ID3D12Resource),
             reinterpret_cast<void**>(g_blas[i].scratch.ReleaseAndGetAddressOf())
@@ -575,7 +640,7 @@ void DX_BuildTLAS_FromEntities()
             &heapDef,
             D3D12_HEAP_FLAG_NONE,
             &scratchDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&g_tlasScratch)));
 
@@ -1197,6 +1262,171 @@ void CreateTAARSandPSO()
     HR(g_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&g_psoTAA)));
 }
 
+void CreateMeshletGBufferRSandPSO()
+{
+    if (!g_meshShadersSupported) return;
+
+    D3D12_DESCRIPTOR_RANGE rMeshSRV{};
+    rMeshSRV.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rMeshSRV.NumDescriptors = 4;
+    rMeshSRV.BaseShaderRegister = 0;
+    rMeshSRV.RegisterSpace = 0;
+    rMeshSRV.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE rTex{};
+    rTex.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rTex.NumDescriptors = 1;
+    rTex.BaseShaderRegister = 0;
+    rTex.RegisterSpace = 1;
+    rTex.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    // было 3, станет 5
+    D3D12_ROOT_PARAMETER rp[5]{};
+
+    // b0: пер-объект
+    rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rp[0].Descriptor.ShaderRegister = 0;
+    rp[0].Descriptor.RegisterSpace = 0;
+    rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
+
+    // t0..t3 space0: vertices/meshlets/unique/prims
+    rp[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rp[1].DescriptorTable.NumDescriptorRanges = 1;
+    rp[1].DescriptorTable.pDescriptorRanges = &rMeshSRV;
+    rp[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
+
+    // t0 space1: texture
+    rp[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rp[2].DescriptorTable.NumDescriptorRanges = 1;
+    rp[2].DescriptorTable.pDescriptorRanges = &rTex;
+    rp[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // root constants b1: firstMeshlet (1 uint)
+    rp[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    rp[3].Constants.ShaderRegister = 1;   // b1
+    rp[3].Constants.RegisterSpace = 0;
+    rp[3].Constants.Num32BitValues = 1;
+    rp[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_MESH;
+
+    // root constants b2: debugMeshlets (1 uint)
+    rp[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    rp[4].Constants.ShaderRegister = 2;   // b2
+    rp[4].Constants.RegisterSpace = 0;
+    rp[4].Constants.Num32BitValues = 1;
+    rp[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_STATIC_SAMPLER_DESC samp{};
+    samp.Filter = D3D12_FILTER_ANISOTROPIC;
+    samp.MaxAnisotropy = 8;
+    samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samp.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    samp.ShaderRegister = 0;
+    samp.RegisterSpace = 1;
+    samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_ROOT_SIGNATURE_DESC rs{};
+    rs.NumParameters = _countof(rp);
+    rs.pParameters = rp;
+    rs.NumStaticSamplers = 1;
+    rs.pStaticSamplers = &samp;
+    rs.Flags = D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+
+    ComPtr<ID3DBlob> sig, err;
+    HR(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    HR(g_device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&g_rsMeshletGBuffer)));
+
+    auto ms = CompileShaderDXC(L"shaders\\meshlet_gbuf_ms.hlsl", L"main", L"ms_6_6");
+    auto ps = CompileShaderDXC(L"shaders\\meshlet_gbuf_ps.hlsl", L"main", L"ps_6_6");
+
+    if (!ms || ms->GetBufferPointer() == nullptr || ms->GetBufferSize() == 0) return;
+    if (!ps || ps->GetBufferPointer() == nullptr || ps->GetBufferSize() == 0) return;
+
+    D3D12_SHADER_BYTECODE msBC{ ms->GetBufferPointer(), ms->GetBufferSize() };
+    D3D12_SHADER_BYTECODE psBC{ ps->GetBufferPointer(), ps->GetBufferSize() };
+
+    // дефолтные стейты
+    D3D12_BLEND_DESC blend{};
+    blend.AlphaToCoverageEnable = FALSE;
+    blend.IndependentBlendEnable = FALSE;
+    for (int i = 0; i < 8; ++i) {
+        auto& rt = blend.RenderTarget[i];
+        rt.BlendEnable = FALSE;
+        rt.LogicOpEnable = FALSE;
+        rt.SrcBlend = D3D12_BLEND_ONE;
+        rt.DestBlend = D3D12_BLEND_ZERO;
+        rt.BlendOp = D3D12_BLEND_OP_ADD;
+        rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+        rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+        rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        rt.LogicOp = D3D12_LOGIC_OP_NOOP;
+        rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    }
+
+    D3D12_RASTERIZER_DESC rast{};
+    rast.FillMode = D3D12_FILL_MODE_SOLID;
+    rast.CullMode = D3D12_CULL_MODE_BACK;
+    rast.FrontCounterClockwise = FALSE;
+    rast.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+    rast.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+    rast.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+    rast.DepthClipEnable = TRUE;
+
+    D3D12_DEPTH_STENCIL_DESC ds{};
+    ds.DepthEnable = TRUE;
+    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    ds.StencilEnable = FALSE;
+
+    D3D12_RT_FORMAT_ARRAY rtf{};
+    rtf.NumRenderTargets = 2;
+    rtf.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    rtf.RTFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+
+    DXGI_SAMPLE_DESC sample{ 1,0 };
+    DXGI_FORMAT dsvFmt = g_depthFormat;
+    D3D12_PRIMITIVE_TOPOLOGY_TYPE topo = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+    // ВАЖНО: root signature payload - это просто pointer, но как Data в Subobject<ID3D12RootSignature*>
+    Subobject<ID3D12RootSignature*> soRoot{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, g_rsMeshletGBuffer.Get() };
+    Subobject<D3D12_SHADER_BYTECODE> soMS{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, msBC };
+    Subobject<D3D12_SHADER_BYTECODE> soPS{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, psBC };
+    Subobject<D3D12_BLEND_DESC> soBlend{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, blend };
+    Subobject<D3D12_RASTERIZER_DESC> soRast{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, rast };
+    Subobject<D3D12_DEPTH_STENCIL_DESC> soDS{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, ds };
+    Subobject<D3D12_PRIMITIVE_TOPOLOGY_TYPE> soTopo{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY, topo };
+    Subobject<D3D12_RT_FORMAT_ARRAY> soRTF{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS, rtf };
+    Subobject<DXGI_FORMAT> soDSV{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, dsvFmt };
+    Subobject<DXGI_SAMPLE_DESC> soSample{ D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, sample };
+
+    // теперь делаем "поток" как массив байтов из этих subobjectов подряд
+    // Поскольку каждый Subobject выровнен по void*, парсер D3D12 не съедет.
+    struct Stream
+    {
+        decltype(soRoot)   a;
+        decltype(soMS)     b;
+        decltype(soPS)     c;
+        decltype(soBlend)  d;
+        decltype(soRast)   e;
+        decltype(soDS)     f;
+        decltype(soTopo)   g;
+        decltype(soRTF)    h;
+        decltype(soDSV)    i;
+        decltype(soSample) j;
+    } stream{ soRoot, soMS, soPS, soBlend, soRast, soDS, soTopo, soRTF, soDSV, soSample };
+
+    D3D12_PIPELINE_STATE_STREAM_DESC sd{};
+    sd.pPipelineStateSubobjectStream = &stream;
+    sd.SizeInBytes = sizeof(stream);
+
+    ComPtr<ID3D12Device2> dev2;
+    HR(g_device.As(&dev2));
+    HR(dev2->CreatePipelineState(&sd, IID_PPV_ARGS(&g_psoMeshletGBuffer)));
+}
+
 void DX_CreateTAAHistoryRT(UINT w, UINT h)
 {
     const DXGI_FORMAT fmt = g_backBufferFormat;
@@ -1631,6 +1861,7 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     DX_CreateTAAHistoryRT(w, h);
 
     CreateGBufferRSandPSO();
+    CreateMeshletGBufferRSandPSO();
     CreateTerrainRSandPSO();
     CreateLightingRSandPSO();
     CreateTAARSandPSO();

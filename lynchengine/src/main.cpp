@@ -125,16 +125,36 @@ void RenderFrame()
 
 	g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
 	g_cmdList->SetPipelineState(g_psoGBuffer.Get());
+
 	{
 		ID3D12DescriptorHeap* heaps[] = { g_srvHeap.Get(), g_sampHeap.Get() };
 		g_cmdList->SetDescriptorHeaps(2, heaps);
 	}
+
 	g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	auto ResolveTexId = [&](const MeshGPU& m, const Submesh* psm, UINT entityFallback)->UINT {
+		if (psm && psm->materialId != UINT(-1) && psm->materialId < m.materialsTexId.size()) {
+			UINT t = m.materialsTexId[psm->materialId];
+			if (t != UINT(-1) && t < g_textures.size()) return t;
+		}
+		if (entityFallback != UINT(-1) && entityFallback < g_textures.size()) return entityFallback;
+		return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
+		};
+
+	auto ResolveTexIdByMaterial = [&](const MeshGPU& m, UINT materialId, UINT entityFallback)->UINT {
+		if (materialId != UINT(-1) && materialId < m.materialsTexId.size()) {
+			UINT t = m.materialsTexId[materialId];
+			if (t != UINT(-1) && t < g_textures.size()) return t;
+		}
+		if (entityFallback != UINT(-1) && entityFallback < g_textures.size()) return entityFallback;
+		return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
+		};
 
 	for (const Entity& e : g_entities)
 	{
 		if (e.meshId >= g_meshes.size()) continue;
-		const MeshGPU& m = g_meshes[e.meshId];
+		MeshGPU& m = g_meshes[e.meshId];
 
 		XMMATRIX S = XMMatrixScaling(e.scale.x, e.scale.y, e.scale.z);
 		XMMATRIX Rx = XMMatrixRotationX(XMConvertToRadians(e.rotDeg.x));
@@ -152,36 +172,73 @@ void RenderFrame()
 		c.uvMul = e.uvMul;
 		c.jitter = g_taaJitterNDC;
 
-		if (drawIdx >= g_cbMaxPerFrame) break;
-		std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
-		D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
-		g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
+		const bool canMeshlet =
+			g_useMeshlets &&
+			g_meshShadersSupported &&
+			(m.srvMeshlets != UINT(-1)) &&
+			(!m.meshletRanges.empty());
 
-		g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
-		g_cmdList->IASetIndexBuffer(&m.ibv);
+		if (canMeshlet)
+		{
+			g_cmdList->SetGraphicsRootSignature(g_rsMeshletGBuffer.Get());
+			g_cmdList->SetPipelineState(g_psoMeshletGBuffer.Get());
 
-		auto ResolveTexId = [&](const Submesh* psm, UINT entityFallback)->UINT {
-			if (psm && psm->materialId != UINT(-1) && psm->materialId < m.materialsTexId.size()) {
-				UINT t = m.materialsTexId[psm->materialId];
-				if (t != UINT(-1) && t < g_textures.size()) return t;
+			for (const auto& r : m.meshletRanges)
+			{
+				if (drawIdx >= g_cbMaxPerFrame) break;
+				std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
+				D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
+
+				g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
+
+				Transition(g_cmdList.Get(), m.vb.Get(), m.vbState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+				UINT texId = ResolveTexIdByMaterial(m, r.materialId, e.texId);
+				UINT first = r.first;
+				UINT dbg = g_debugMeshlets ? 1u : 0u;
+
+				g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(m.srvVertices));
+				g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[texId].gpu);
+				g_cmdList->SetGraphicsRoot32BitConstants(3, 1, &first, 0);
+				g_cmdList->SetGraphicsRoot32BitConstants(4, 1, &dbg, 0);
+
+				g_cmdList->DispatchMesh(r.count, 1, 1);
+
+				++drawIdx;
 			}
-			if (entityFallback != UINT(-1) && entityFallback < g_textures.size()) return entityFallback;
-			return (g_texFallbackId < g_textures.size()) ? g_texFallbackId : 0;
-			};
-
-		if (m.subsets.empty()) {
-			UINT texId = ResolveTexId(nullptr, e.texId);
-			g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
-			g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
 		}
-		else {
-			for (const Submesh& sm : m.subsets) {
-				UINT texId = ResolveTexId(&sm, e.texId);
+		else
+		{
+			g_cmdList->SetGraphicsRootSignature(g_rsGBuffer.Get());
+			g_cmdList->SetPipelineState(g_psoGBuffer.Get());
+
+			if (drawIdx >= g_cbMaxPerFrame) break;
+			std::memcpy(cbBaseCPU + (size_t)drawIdx * g_cbStride, &c, sizeof(c));
+			D3D12_GPU_VIRTUAL_ADDRESS gpuAddr = cbBaseGPU + (UINT64)drawIdx * g_cbStride;
+
+			g_cmdList->SetGraphicsRootConstantBufferView(0, gpuAddr);
+
+			Transition(g_cmdList.Get(), m.vb.Get(), m.vbState, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+			Transition(g_cmdList.Get(), m.ib.Get(), m.ibState, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+			g_cmdList->IASetVertexBuffers(0, 1, &m.vbv);
+			g_cmdList->IASetIndexBuffer(&m.ibv);
+
+			if (m.subsets.empty()) {
+				UINT texId = ResolveTexId(m, nullptr, e.texId);
 				g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
-				g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+				g_cmdList->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
 			}
+			else {
+				for (const Submesh& sm : m.subsets) {
+					UINT texId = ResolveTexId(m, &sm, e.texId);
+					g_cmdList->SetGraphicsRootDescriptorTable(1, g_textures[texId].gpu);
+					g_cmdList->DrawIndexedInstanced(sm.indexCount, 1, sm.indexOffset, 0, 0);
+				}
+			}
+
+			++drawIdx;
 		}
-		++drawIdx;
 	}
 
 	if (!g_terrainonetile) {
@@ -505,7 +562,8 @@ void RenderFrame()
 	HR(g_cmdList->Close());
 	ID3D12CommandList* lists[] = { g_cmdList.Get() };
 	g_cmdQueue->ExecuteCommandLists(1, lists);
-	HR(g_swapChain->Present(1, 0));
+
+	HR(g_swapChain->Present(0, 0));
 
 	const UINT64 fenceToWait = g_fenceValue++;
 	HR(g_cmdQueue->Signal(g_fence.Get(), fenceToWait));

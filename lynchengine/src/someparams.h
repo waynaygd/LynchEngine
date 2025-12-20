@@ -25,7 +25,7 @@
 #include "lights.h"
 #include "terrain.h"
 
-#include <d3dx12.h>
+#include "../external/d3dx12.h"
 #include "DirectXTex.h"
 
 using namespace DirectX;
@@ -42,10 +42,10 @@ extern ComPtr<ID3D12DescriptorHeap> g_rtvHeap;
 extern UINT                         g_rtvInc;
 extern ComPtr<ID3D12Resource>       g_backBuffers[kFrameCount];
 extern ComPtr<ID3D12CommandAllocator> g_alloc[kFrameCount];
-extern ComPtr<ID3D12GraphicsCommandList> g_cmdList;
+extern ComPtr<ID3D12GraphicsCommandList6> g_cmdList;
 
 extern ComPtr<ID3D12Device5> g_device5;
-extern ComPtr<ID3D12GraphicsCommandList4> g_cmdList4;
+extern ComPtr<ID3D12GraphicsCommandList6> g_cmdList4;
 
 extern ComPtr<ID3D12Fence>          g_fence;
 extern HANDLE                       g_fenceEvent;
@@ -318,6 +318,13 @@ extern bool g_tlasDirty;
 extern UINT   g_tlasCapacity;
 extern void* g_tlasInstancesMapped;
 extern bool   g_tlasBuiltOnce;
+
+extern ComPtr<ID3D12RootSignature> g_rsMeshletGBuffer;
+extern ComPtr<ID3D12PipelineState> g_psoMeshletGBuffer;
+extern bool g_meshShadersSupported;
+
+extern bool g_useMeshlets;
+extern bool g_debugMeshlets;
 
 void InitD3D12(HWND hWnd, UINT width, UINT height);
 void RenderFrame();

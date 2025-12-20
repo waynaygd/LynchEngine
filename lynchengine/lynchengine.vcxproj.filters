@@ -143,6 +143,12 @@
     <Text Include="shaders\taa_ps.hlsl">
       <Filter>Main Files\Shaders</Filter>
     </Text>
+    <Text Include="shaders\meshlet_gbuf_ms.hlsl">
+      <Filter>Main Files\Shaders</Filter>
+    </Text>
+    <Text Include="shaders\meshlet_gbuf_ps.hlsl">
+      <Filter>Main Files\Shaders</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">

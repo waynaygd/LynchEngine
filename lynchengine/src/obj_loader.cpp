@@ -8,6 +8,18 @@
 #include "d3d_init.h"
 #include <gpu_upload.h>
 
+static void DebugLog(const char* fmt, ...)
+{
+    char buf[1024];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
+    va_end(args);
+
+    OutputDebugStringA(buf);
+}
+
 static std::string Narrow(const std::wstring& w) {
     int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
     std::string s(len - 1, '\0');
@@ -48,17 +60,15 @@ bool LoadOBJToGPU(const std::wstring& pathW,
     using namespace DirectX;
     namespace fs = std::filesystem;
 
-    // База путей (wide) для последующей загрузки текстур
     fs::path objPath = pathW;
     fs::path baseDir = objPath.parent_path();
 
-    // Короткие ASCII-пути для tinyobj/ifstream
     const std::string objShortA = ShortAnsiPathFromWide(objPath.wstring());
     const std::string baseShortA = ShortAnsiPathFromWide(baseDir.wstring());
 
     tinyobj::ObjReaderConfig cfg;
     cfg.triangulate = true;
-    cfg.mtl_search_path = baseShortA; // пусть .mtl ищется рядом
+    cfg.mtl_search_path = baseShortA;
 
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(objShortA, cfg)) {
@@ -76,11 +86,9 @@ bool LoadOBJToGPU(const std::wstring& pathW,
     out.materialsTexId.clear();
     out.materialsTexId.resize(std::max<size_t>(1, materials.size()), UINT(-1));
 
-    // ===== Загрузка диффузных текстур из материалов (UTF-8 -> wide) =====
     for (size_t mi = 0; mi < materials.size(); ++mi) {
         const auto& m = materials[mi];
         if (!m.diffuse_texname.empty()) {
-            // имя из .mtl — UTF-8; строим абсолютный wide-путь корректно
             fs::path texAbs = baseDir / fs::path(Utf8ToWide(m.diffuse_texname));
             try {
                 out.materialsTexId[mi] = RegisterTexture_OnCmd(texAbs.wstring(), uploadCmd);
@@ -91,7 +99,6 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         }
     }
 
-    // ===== Ниже — твой исходный код построения вершин/индексов/сабсетов =====
     std::vector<VertexOBJ> vertices;
     vertices.reserve(1 << 16);
 
@@ -154,14 +161,24 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             int faceVerts = fv[f];
             int mat = ids.empty() ? -1 : ids[f];
 
+            if (faceVerts < 3) { triBase += faceVerts; continue; }
+
+            // базовая вершина для fan-триангуляции
             uint32_t i0 = addVertex(idx[triBase + 0]);
-            uint32_t i1 = addVertex(idx[triBase + 1]);
-            uint32_t i2 = addVertex(idx[triBase + 2]);
 
             auto& dst = (mat >= 0 && (size_t)mat < materials.size()) ? matIB[(size_t)mat] : noMatIB;
-            dst.push_back(i0); dst.push_back(i1); dst.push_back(i2);
 
-            indicesAll.push_back(i0); indicesAll.push_back(i1); indicesAll.push_back(i2);
+            // делаем (0, k, k+1) для k = 1..faceVerts-2
+            for (int k = 1; k + 1 < faceVerts; ++k)
+            {
+                uint32_t i1 = addVertex(idx[triBase + k]);
+                uint32_t i2 = addVertex(idx[triBase + k + 1]);
+
+                dst.push_back(i0); dst.push_back(i1); dst.push_back(i2);
+
+                indicesAll.push_back(i0); indicesAll.push_back(i1); indicesAll.push_back(i2);
+            }
+
             triBase += faceVerts;
         }
     }
@@ -228,6 +245,9 @@ bool LoadOBJToGPU(const std::wstring& pathW,
             out.ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
     }
 
+    out.vbState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    out.ibState = D3D12_RESOURCE_STATE_INDEX_BUFFER;
+
     g_uploadKeepAlive.push_back(vbUpload);
     g_uploadKeepAlive.push_back(ibUpload);
 
@@ -242,6 +262,86 @@ bool LoadOBJToGPU(const std::wstring& pathW,
         : (UINT)(indices16.size() * sizeof(uint16_t));
 
     out.indexCount = (UINT)indices32.size();
+
+    std::vector<MeshletGPU> meshlets;
+    std::vector<uint32_t> unique;
+    std::vector<uint32_t> prims;
+    std::vector<MeshGPU::MeshletRange> ranges;
+
+    const uint32_t MAX_VERTS = 64;
+    const uint32_t MAX_PRIMS = 126;
+
+    ranges.reserve(out.subsets.size());
+    for (const Submesh& sm : out.subsets)
+    {
+        MeshGPU::MeshletRange r{};
+        uint32_t matId = (sm.materialId == UINT(-1)) ? UINT(-1) : sm.materialId;
+
+        size_t meshletStart = meshlets.size();
+        size_t uniqueStart = unique.size();
+        size_t primStart = prims.size();
+
+        BuildMeshletsGreedy(
+            indices32,
+            sm.indexOffset,
+            sm.indexCount,
+            matId,
+            MAX_VERTS,
+            MAX_PRIMS,
+            meshlets,
+            unique,
+            prims,
+            r);
+     
+
+        if (r.count > 0) ranges.push_back(r);
+    }
+
+    out.meshletRanges = std::move(ranges);
+
+    auto CreateStructuredSRV = [&](ID3D12Resource* res, UINT numElements, UINT stride, UINT& outSlot)
+        {
+            outSlot = SRV_Alloc();
+
+            D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+            sd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            sd.Buffer.FirstElement = 0;
+            sd.Buffer.NumElements = numElements;
+            sd.Buffer.StructureByteStride = stride;
+            sd.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            sd.Format = DXGI_FORMAT_UNKNOWN;
+
+            g_device->CreateShaderResourceView(res, &sd, SRV_CPU(outSlot));
+        };
+
+    if (!meshlets.empty())
+    {
+        ComPtr<ID3D12Resource> up0, up1, up2;
+
+        CreateDefaultBuffer(device, uploadCmd,
+            meshlets.data(), (UINT)(meshlets.size() * sizeof(MeshletGPU)),
+            out.meshletBuf, up0, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        CreateDefaultBuffer(device, uploadCmd,
+            unique.data(), (UINT)(unique.size() * sizeof(uint32_t)),
+            out.uniqueIndexBuf, up1, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        CreateDefaultBuffer(device, uploadCmd,
+            prims.data(), (UINT)(prims.size() * sizeof(uint32_t)),
+            out.primIndexBuf, up2, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        g_uploadKeepAlive.push_back(up0);
+        g_uploadKeepAlive.push_back(up1);
+        g_uploadKeepAlive.push_back(up2);
+
+        CreateStructuredSRV(out.vb.Get(), (UINT)vertices.size(), sizeof(VertexOBJ), out.srvVertices);
+
+        CreateStructuredSRV(out.meshletBuf.Get(), (UINT)meshlets.size(), sizeof(MeshletGPU), out.srvMeshlets);
+        CreateStructuredSRV(out.uniqueIndexBuf.Get(), (UINT)unique.size(), sizeof(uint32_t), out.srvUnique);
+        CreateStructuredSRV(out.primIndexBuf.Get(), (UINT)prims.size(), sizeof(uint32_t), out.srvPrims);
+    }
+
     return true;
 }
 
@@ -250,27 +350,22 @@ bool WinOpenFileDialogOBJ(std::wstring& outPath)
     wchar_t fileBuf[MAX_PATH] = L"";
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr; // можно передать окно, если у тебя есть HWND
+    ofn.hwndOwner = nullptr; 
     ofn.lpstrFile = fileBuf;
     ofn.nMaxFile = MAX_PATH;
 
-    // Фильтр: "OBJ files (*.obj)\0*.obj\0All files (*.*)\0*.*\0\0"
     static const wchar_t filter[] =
         L"OBJ files (*.obj)\0*.obj\0All files (*.*)\0*.*\0\0";
     ofn.lpstrFilter = filter;
     ofn.nFilterIndex = 1;
-
-    // Начальная папка (опционально)
-    // ofn.lpstrInitialDir = L"assets\\meshes";
 
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
     if (GetOpenFileNameW(&ofn)) {
         outPath = fileBuf;
         return true;
     }
-    return false; // cancel или ошибка
+    return false; 
 }
-
 
 UINT RegisterOBJ(const std::wstring& path)
 {
@@ -397,4 +492,96 @@ UINT CreateCubeMeshGPU()
     g_meshes.emplace_back(std::move(mesh));
 
     return id;
+}
+
+static void BuildMeshletsGreedy(
+    const std::vector<uint32_t>& indices32,
+    uint32_t indexOffset,
+    uint32_t indexCount,
+    uint32_t materialId,
+    uint32_t maxVerts,
+    uint32_t maxPrims,
+    std::vector<MeshletGPU>& outMeshlets,
+    std::vector<uint32_t>& outUnique,
+    std::vector<uint32_t>& outPrims,
+    MeshGPU::MeshletRange& outRange)
+{
+    const uint32_t triCount = indexCount / 3;
+
+    auto flush = [&](std::vector<uint32_t>& localUnique, std::unordered_map<uint32_t, uint32_t>& remap, std::vector<uint32_t>& localPrims)
+        {
+            if (localPrims.empty()) return;
+
+            MeshletGPU ml{};
+            ml.vertOffset = (uint32_t)outUnique.size();
+            ml.vertCount = (uint32_t)localUnique.size();
+            ml.primOffset = (uint32_t)(outPrims.size() / 3);
+            ml.primCount = (uint32_t)(localPrims.size() / 3);
+
+            ml.materialId = materialId;
+
+            outUnique.insert(outUnique.end(), localUnique.begin(), localUnique.end());
+            outPrims.insert(outPrims.end(), localPrims.begin(), localPrims.end());
+            outMeshlets.push_back(ml);
+
+            localUnique.clear();
+            remap.clear();
+            localPrims.clear();
+        };
+
+    std::vector<uint32_t> localUnique;
+    localUnique.reserve(maxVerts);
+
+    std::vector<uint32_t> localPrims;
+    localPrims.reserve(maxPrims * 3);
+
+    std::unordered_map<uint32_t, uint32_t> remap;
+    remap.reserve(maxVerts * 2);
+
+    outRange.first = (uint32_t)outMeshlets.size();
+    outRange.materialId = materialId;
+    outRange.count = 0;
+
+    for (uint32_t t = 0; t < triCount; ++t)
+    {
+        uint32_t i0 = indices32[indexOffset + t * 3 + 0];
+        uint32_t i1 = indices32[indexOffset + t * 3 + 1];
+        uint32_t i2 = indices32[indexOffset + t * 3 + 2];
+
+        auto canAddVert = [&](uint32_t v)->bool
+            {
+                if (remap.find(v) != remap.end()) return true;
+                return localUnique.size() + 1 <= maxVerts;
+            };
+
+        bool fitsVerts = canAddVert(i0) && canAddVert(i1) && canAddVert(i2);
+        bool fitsPrims = (localPrims.size() / 3 + 1 <= maxPrims);
+
+        if (!fitsVerts || !fitsPrims)
+        {
+            flush(localUnique, remap, localPrims);
+        }
+
+        auto getLocal = [&](uint32_t v)->uint32_t
+            {
+                auto it = remap.find(v);
+                if (it != remap.end()) return it->second;
+                uint32_t li = (uint32_t)localUnique.size();
+                localUnique.push_back(v);
+                remap.emplace(v, li);
+                return li;
+            };
+
+        uint32_t l0 = getLocal(i0);
+        uint32_t l1 = getLocal(i1);
+        uint32_t l2 = getLocal(i2);
+
+        localPrims.push_back(l0);
+        localPrims.push_back(l1);
+        localPrims.push_back(l2);
+    }
+
+    flush(localUnique, remap, localPrims);
+
+    outRange.count = (uint32_t)outMeshlets.size() - outRange.first;
 }

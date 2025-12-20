@@ -9,10 +9,10 @@ ComPtr<ID3D12DescriptorHeap> g_rtvHeap;
 UINT                         g_rtvInc = 0;
 ComPtr<ID3D12Resource>       g_backBuffers[kFrameCount];
 ComPtr<ID3D12CommandAllocator> g_alloc[kFrameCount];
-ComPtr<ID3D12GraphicsCommandList> g_cmdList;
+ComPtr<ID3D12GraphicsCommandList6> g_cmdList;
 
 ComPtr<ID3D12Device5> g_device5;
-ComPtr<ID3D12GraphicsCommandList4> g_cmdList4;
+ComPtr<ID3D12GraphicsCommandList6> g_cmdList4;
 
 ComPtr<ID3D12Fence>          g_fence;
 HANDLE                       g_fenceEvent = nullptr;
@@ -212,3 +212,10 @@ void* g_tlasInstancesMapped = nullptr;
 bool g_tlasBuiltOnce = false;
 
 uint32_t g_srvCursor = 0; 
+
+ComPtr<ID3D12RootSignature> g_rsMeshletGBuffer;
+ComPtr<ID3D12PipelineState> g_psoMeshletGBuffer;
+bool g_meshShadersSupported = false;
+
+bool g_useMeshlets = true;
+bool g_debugMeshlets = false;
