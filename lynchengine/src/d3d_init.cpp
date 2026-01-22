@@ -138,12 +138,6 @@ void BuildEditorUI()
             }
 
             ImGui::Separator();
-            if (ImGui::Button("Add Cube")) {
-                UINT cube = CreateCubeMeshGPU();
-                Scene_AddEntity(cube, g_texDefault, { 0,0,0 }, { 0,0,0 }, { 1,1,1 });
-            }
-
-            ImGui::Separator();
             if (ImGui::Button("Load OBJ")) {
                 std::wstring pathW;
                 if (WinOpenFileDialogOBJ(pathW)) {
@@ -178,15 +172,10 @@ void BuildEditorUI()
 
                 if (ImGui::TreeNode("Bindings")) {
                     if (ImGui::BeginListBox("Mesh")) {
-                        for (UINT i = 0; i < g_meshes.size(); ++i) {
+                        for (UINT i = 0; i < (UINT)g_meshes.size(); ++i) {
                             bool sel = (e.meshId == i);
-                            char buf[32]; sprintf_s(buf, "mesh %u", i);
-                            if (ImGui::Selectable(buf, sel))
-                            {
+                            if (ImGui::Selectable(("Mesh " + std::to_string(i)).c_str(), sel))
                                 e.meshId = i;
-                                g_tlasDirty = true;
-                            }
-                            if (sel) ImGui::SetItemDefaultFocus();
                         }
                         ImGui::EndListBox();
                     }
@@ -294,7 +283,7 @@ void BuildEditorUI()
             {
                 if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size())
                 {
-                    g_alphaShadowEntity = g_selectedEntity;
+                    g_alphaShadowEntity = (int)g_entities[g_selectedEntity].id;
                     g_alphaShadowTexId = (int)g_entities[g_selectedEntity].texId;
                     g_alphaShadowUvScale = g_entities[g_selectedEntity].uvMul;
                 }
@@ -452,14 +441,13 @@ void DX_BuildBLAS_ForAllMeshes()
 
         D3D12_RAYTRACING_GEOMETRY_DESC geom = {};
         geom.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geom.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        geom.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
 
         geom.Triangles.VertexBuffer.StartAddress =
             m.vb->GetGPUVirtualAddress();   
 
-        geom.Triangles.VertexBuffer.StrideInBytes = sizeof(VertexOBJ);
-        geom.Triangles.VertexCount =
-            m.vbv.SizeInBytes / sizeof(VertexOBJ);
+        geom.Triangles.VertexBuffer.StrideInBytes = m.vbv.StrideInBytes;
+        geom.Triangles.VertexCount = m.vbv.SizeInBytes / m.vbv.StrideInBytes;
 
         geom.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 
@@ -636,15 +624,18 @@ void DX_BuildTLAS_FromEntities()
         XMFLOAT4X4 wf;
         XMStoreFloat4x4(&wf, W);
 
-        d.Transform[0][0] = wf._11; d.Transform[0][1] = wf._12; d.Transform[0][2] = wf._13; d.Transform[0][3] = wf._41;
-        d.Transform[1][0] = wf._21; d.Transform[1][1] = wf._22; d.Transform[1][2] = wf._23; d.Transform[1][3] = wf._42;
-        d.Transform[2][0] = wf._31; d.Transform[2][1] = wf._32; d.Transform[2][2] = wf._33; d.Transform[2][3] = wf._43;
+        // вместо твоего текущего блока d.Transform[...] = wf._..
+        // вместо текущего блока d.Transform[...]
+
+        d.Transform[0][0] = wf._11; d.Transform[0][1] = wf._21; d.Transform[0][2] = wf._31; d.Transform[0][3] = wf._41;
+        d.Transform[1][0] = wf._12; d.Transform[1][1] = wf._22; d.Transform[1][2] = wf._32; d.Transform[1][3] = wf._42;
+        d.Transform[2][0] = wf._13; d.Transform[2][1] = wf._23; d.Transform[2][2] = wf._33; d.Transform[2][3] = wf._43;
 
         d.InstanceMask = 0xFF;
         d.AccelerationStructure = b.blas->GetGPUVirtualAddress();
-        d.InstanceID = i;
+        d.InstanceID = (e.id & 0x00FFFFFFu); // InstanceID = 24 бита
         d.InstanceContributionToHitGroupIndex = 0;
-        d.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+        d.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE;
 
         instGPU[i] = d;
     }
@@ -808,13 +799,15 @@ void DX_CreateGBuffer(UINT w, UINT h)
     UINT base1 = SRV_Alloc();  
     UINT base2 = SRV_Alloc(); 
     UINT base3 = SRV_Alloc();  // t3 TLAS (заполним позже)
+    UINT base4 = SRV_Alloc(); // t4 AlphaCaster buffer
 
-    assert(base1 == base0 + 1 && base2 == base0 + 2 && base3 == base0 + 3);
+    assert(base1 == base0 + 1 && base2 == base0 + 2 && base3 == base0 + 3 && base4 == base0 + 4);
 
     g_gbufAlbedoSRV = base0;
     g_gbufNormalSRV = base1;
     g_gbufDepthSRV = base2;
     g_tlasSRV = base3;
+    g_alphaCasterSRV = base4;
 
     makeSRV2D(g_gbufAlbedo.Get(), DXGI_FORMAT_R8G8B8A8_UNORM, g_gbufAlbedoSRV);
     makeSRV2D(g_gbufNormal.Get(), DXGI_FORMAT_R16G16B16A16_FLOAT, g_gbufNormalSRV);
@@ -899,6 +892,7 @@ void CreateGBufferRSandPSO()
     pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     pso.InputLayout = { inputElems, _countof(inputElems) };
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     pso.NumRenderTargets = 2;
     pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -1462,10 +1456,14 @@ void DX_LoadAssets()
     UINT meshSponza = RegisterOBJ(L"assets\\models\\sponza.obj");
     UINT meshSmirnov = RegisterOBJ(L"assets\\models\\Evgeny_Smirnov.obj");
 
-    Scene_AddEntity(meshSponza, texDefault, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 0.01f,0.01f,0.01f });
-    Scene_AddEntity(meshZagarskih, texZagar, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
-    Scene_AddEntity(meshBodganov, texBogdan, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
-    Scene_AddEntity(meshMarkaryan, texArsen, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    UINT plane_grass = CreatePlaneMeshGPU();
+
+    Scene_AddEntity(meshSponza, texDefault, { 0.f,1.f,0.f }, { 0.f,0.f,0.f }, { 0.01f,0.01f,0.01f });
+    //Scene_AddEntity(meshZagarskih, texZagar, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    //Scene_AddEntity(meshBodganov, texBogdan, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+    //Scene_AddEntity(meshMarkaryan, texArsen, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
+
+    Scene_AddEntity(plane_grass, texGrass, { 0.f,5.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
 
     //Scene_AddEntity(meshSmirnov, texSmirnov, { 0.f,0.f,0.f }, { 0.f,0.f,0.f }, { 1.f,1.f,1.f });
 }
@@ -1662,6 +1660,32 @@ void InitD3D12(HWND hWnd, UINT w, UINT h)
     CreatePerObjectCB(1024);
     CreateTerrainCB();
     CreateUploadCB<CBLighting>(g_cbLighting, g_cbLightingPtr);
+
+    {
+        CD3DX12_HEAP_PROPERTIES heapUpload(D3D12_HEAP_TYPE_UPLOAD);
+        auto desc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(AlphaCasterGPU) * MAX_OBJECTS);
+
+        HR(g_device->CreateCommittedResource(
+            &heapUpload, D3D12_HEAP_FLAG_NONE,
+            &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr, IID_PPV_ARGS(&g_alphaCasterBuf)));
+
+        HR(g_alphaCasterBuf->Map(0, nullptr, reinterpret_cast<void**>(&g_alphaCasterPtr)));
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+        sd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sd.Buffer.FirstElement = 0;
+        sd.Buffer.NumElements = MAX_OBJECTS;
+        sd.Buffer.StructureByteStride = sizeof(AlphaCasterGPU);
+        sd.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+        sd.Format = DXGI_FORMAT_UNKNOWN;
+
+        g_device->CreateShaderResourceView(g_alphaCasterBuf.Get(), &sd, SRV_CPU(g_alphaCasterSRV));
+
+
+    }
+
     CreateUploadCB<CBTAA_CPU>(g_cbTAA, g_cbTAAPtr);
 
     if (g_lightsAuthor.empty()) {

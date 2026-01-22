@@ -55,7 +55,16 @@ Texture2D gNormal : register(t1);
 Texture2D gDepth : register(t2);
 RaytracingAccelerationStructure gScene : register(t3);
 
-Texture2D gTex[] : register(t4);
+struct AlphaCasterGPU
+{
+    uint texIndex;
+    float uvScale;
+    float cutoff;
+    uint flags;
+};
+
+StructuredBuffer<AlphaCasterGPU> gAlphaCasters : register(t4);
+Texture2D gTex[] : register(t5);
 
 SamplerState gSamp : register(s0);
 SamplerState gSampZ : register(s1);
@@ -83,45 +92,55 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
     ray.TMax = tMax;
 
     RayQuery <
-        RAY_FLAG_FORCE_NON_OPAQUE |
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+        RAY_FLAG_FORCE_NON_OPAQUE
     > q;
 
     q.TraceRayInline(gScene, 0, 0xFF, ray);
-
-    const bool alphaEnabled = (alphaShadowEntity != 0xFFFFFFFFu);
 
     while (q.Proceed())
     {
         if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            bool isAlphaCaster = alphaEnabled && (q.CandidateInstanceID() == alphaShadowEntity);
+            uint instId = q.CandidateInstanceID();
+            AlphaCasterGPU ac = gAlphaCasters[instId];
 
-            if (isAlphaCaster)
+            bool isAlpha = ((ac.flags & 1u) != 0u) && (ac.texIndex != 0xFFFFFFFFu);
+
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
             {
-                float t = q.CandidateTriangleRayT();
-                float3 hitWS = origin + dir * t;
-
-                float2 uv = hitWS.xz * alphaShadowUvScale;
-
-                uint texSlot = (alphaShadowTexId >= 4u) ? (alphaShadowTexId - 4u) : 0u;
-
-                float a = gTex[texSlot].SampleLevel(gSamp, uv, 0).a;
-
-                if (a < alphaShadowCutoff)
+                if (isAlpha)
                 {
-                    
+                    float t = q.CandidateTriangleRayT();
+                    float3 hitWS = origin + dir * t;
+
+                    float3x4 w2o = q.CandidateWorldToObject3x4();
+                    float3 hitOS = mul(w2o, float4(hitWS, 1.0)); // ¬ј∆Ќќ: пор€док!
+
+                    float2 uv = hitOS.xz * 0.5 + 0.5;
+
+    // если ты уже правил разворот Ч оставь свою версию здесь (flip/swap)
+                    uv *= ac.uvScale;
+                    uv = 1.0f - uv;
+
+                    if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0)
+                    {
+                        float a = gTex[ac.texIndex].SampleLevel(gSamp, uv, 0).a;
+                        if (a >= ac.cutoff)
+                        {
+                            q.CommitNonOpaqueTriangleHit();
+                            return 0.0;
+                        }
+                    }
+    // иначе: прозрачное => не коммитим
                 }
                 else
                 {
+    // обычный non-opaque (например, стекло без маски) считаем блокирующим
                     q.CommitNonOpaqueTriangleHit();
-                    return 0.0; 
+                    return 0.0;
                 }
-            }
-            else
-            {
-                q.CommitNonOpaqueTriangleHit();
-                return 0.0;
+
+
             }
         }
     }

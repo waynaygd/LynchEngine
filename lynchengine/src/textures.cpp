@@ -13,6 +13,60 @@ static void DebugFormat(const TexMetadata& m, const std::wstring& file) {
     OutputDebugStringW(wss.str().c_str());
 }
 
+static bool ComputeHasAlphaMask(const ScratchImage& img)
+{
+    const TexMetadata meta = img.GetMetadata();
+    if (meta.format != DXGI_FORMAT_R8G8B8A8_UNORM &&
+        meta.format != DXGI_FORMAT_B8G8R8A8_UNORM &&
+        meta.format != DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+        meta.format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
+        return false;
+
+    const Image* im = img.GetImage(0, 0, 0);
+    if (!im || !im->pixels) return false;
+
+    const uint8_t* p = im->pixels;
+    size_t pxCount = (size_t)im->width * (size_t)im->height;
+
+    uint8_t aMin = 255, aMax = 0;
+    for (size_t i = 0; i < pxCount; ++i) {
+        uint8_t a = p[i * 4 + 3];
+        aMin = (a < aMin) ? a : aMin;
+        aMax = (a > aMax) ? a : aMax;
+    }
+
+    // если в текстуре реально встречается альфа < 255, значит это маска/прозрачность
+    return aMin < 255;
+
+
+}
+
+static void DebugAlphaRangeIfRGBA8(const ScratchImage& img, const std::wstring& filename)
+{
+    const TexMetadata meta = img.GetMetadata();
+    if (meta.format != DXGI_FORMAT_R8G8B8A8_UNORM && meta.format != DXGI_FORMAT_B8G8R8A8_UNORM)
+        return;
+
+    const Image* im = img.GetImage(0, 0, 0);
+    if (!im || !im->pixels) return;
+
+    uint8_t aMin = 255, aMax = 0;
+    const uint8_t* p = im->pixels;
+    size_t pxCount = (size_t)im->width * (size_t)im->height;
+
+    // RGBA8 и BGRA8 различаются порядком, но альфа в обоих случаях в байте 3
+    for (size_t i = 0; i < pxCount; ++i) {
+        uint8_t a = p[i * 4 + 3];
+        aMin = (a < aMin) ? a : aMin;
+        aMax = (a > aMax) ? a : aMax;
+    }
+
+    wchar_t buf[256];
+    swprintf_s(buf, L"Alpha range for %s: min=%u max=%u format=%u\n",
+        filename.c_str(), aMin, aMax, (unsigned)meta.format);
+    OutputDebugStringW(buf);
+}
+
 ScratchImage LoadTextureFile(const std::wstring& filename)
 {
     if (GetFileAttributesW(filename.c_str()) == INVALID_FILE_ATTRIBUTES) {
@@ -46,16 +100,21 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
 
     const TexMetadata meta = wic.GetMetadata();
     DebugFormat(meta, filename);
+    DebugAlphaRangeIfRGBA8(wic, filename);
 
     switch (meta.format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM:
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
     case DXGI_FORMAT_B8G8R8A8_UNORM:
     case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        out = std::move(wic);
+        DebugAlphaRangeIfRGBA8(out, filename);
+        return out;
+
+        // ВАЖНО: X8 (без альфы) не принимаем как есть.
+        // Пусть пойдёт в Convert ниже и станет RGBA8.
     case DXGI_FORMAT_B8G8R8X8_UNORM:
     case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
-        out = std::move(wic);
-        return out;
     default:
         break;
     }
@@ -70,6 +129,24 @@ ScratchImage LoadTextureFile(const std::wstring& filename)
             TEX_FILTER_DEFAULT, 0.5f, out),
             L"Convert->BGRA8");
     }
+
+    {
+        const Image* im = out.GetImage(0, 0, 0);
+        if (im && im->format == DXGI_FORMAT_R8G8B8A8_UNORM && im->pixels) {
+            uint8_t aMin = 255, aMax = 0;
+            const uint8_t* p = im->pixels;
+            size_t pxCount = (size_t)im->width * (size_t)im->height;
+            for (size_t i = 0; i < pxCount; ++i) {
+                uint8_t a = p[i * 4 + 3];
+                aMin = (a < aMin) ? a : aMin;
+                aMax = (a > aMax) ? a : aMax;
+            }
+            wchar_t buf[256];
+            swprintf_s(buf, L"Alpha range for %s: min=%u max=%u\n", filename.c_str(), aMin, aMax);
+            OutputDebugStringW(buf);
+        }
+    }
+    DebugAlphaRangeIfRGBA8(out, filename);
     return out;
 }
 
@@ -129,7 +206,7 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
         }
         };
 
-    UINT slot = SRV_Alloc(); 
+    UINT slot = SRV_Alloc();
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
     srv.Format = ToSRGB(meta.format);
@@ -138,9 +215,16 @@ UINT RegisterTexture_OnCmd(const std::wstring& path, ID3D12GraphicsCommandList* 
     srv.Texture2D.MipLevels = (UINT)meta.mipLevels;
     g_device->CreateShaderResourceView(tex.Get(), &srv, SRV_CPU(slot));
 
+    bool hasAlpha = ComputeHasAlphaMask(img);
+
     TextureGPU t{};
-    t.res = tex; t.cpu = SRV_CPU(slot); t.gpu = SRV_GPU(slot);
+    t.res = tex;
+    t.cpu = SRV_CPU(slot);
+    t.gpu = SRV_GPU(slot);
+    t.heapIndex = slot;          // ВОТ ЭТОГО НЕ ХВАТАЛО
+    t.hasAlpha = hasAlpha;
     g_textures.push_back(t);
+
 
     g_uploadKeepAlive.push_back(up);
 

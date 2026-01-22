@@ -14,6 +14,7 @@ static float Halton(UINT index, UINT base)
 	return r;
 }
 
+
 static UINT     g_taaSampleIndex = 0;
 static XMFLOAT2 g_taaJitterNDC = { 0.0f, 0.0f };
 
@@ -81,30 +82,6 @@ void RenderFrame()
 		if (g_lightsAuthor.empty())
 			g_lightsAuthor.push_back(LightAuthor{ LT_Dir,{1,1,1},1.0f,{},0.0f,{-0.4f,-1.0f,-0.2f},0,0 });
 	}
-
-	static float sunTime = 0.0f;
-	sunTime += dt;
-
-	const float dayLength = 30.0f;         
-	float tCycle = fmodf(sunTime, dayLength);
-	float phase = tCycle / dayLength; 
-	float angle = phase * XM_2PI;   
-
-	XMFLOAT3 sunPos = { 0.0f, sinf(angle), cosf(angle) };
-	XMVECTOR sunDirV = XMVector3Normalize(XMVectorSet(-sunPos.x, -sunPos.y, -sunPos.z, 0.0f));
-
-	XMFLOAT3 sunDir;
-	XMStoreFloat3(&sunDir, sunDirV);
-	
-
-	for (auto& A : g_lightsAuthor)
-	{
-		if (A.type == LT_Dir) {
-			A.dirW = sunDir;
-			break;
-		}
-	}
-
 
 	for (int i = 0; i < GBUF_COUNT; ++i)
 		Transition(g_cmdList.Get(), g_gbuf[i].Get(), g_gbufState[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -348,14 +325,60 @@ void RenderFrame()
 
 	g_cmdList->SetGraphicsRootDescriptorTable(0, SRV_GPU(g_gbufAlbedoSRV));
 
+	if (g_alphaCasterPtr)
+	{
+		AlphaCasterGPU* out = (AlphaCasterGPU*)g_alphaCasterPtr;
+
+		for (UINT i = 0; i < MAX_OBJECTS; ++i)
+		{
+			out[i].texIndex = 0xFFFFFFFFu;
+			out[i].uvScale = 1.0f;
+			out[i].cutoff = g_alphaShadowCutoff;
+			out[i].flags = 0;
+		}
+
+		// ВАЖНО: если у тебя t4 занят gTex[], то base надо другой.
+		// Это значение верное только в схеме где:
+		// t0..t3 = gbuffer+TLAS, t4 = alphaCasterBuffer, t5.. = gTex[]
+		const UINT texArrayBaseHeapSlot = g_gbufAlbedoSRV + 5;
+
+		for (const auto& e : g_entities)
+		{
+			if (e.id >= MAX_OBJECTS) continue;
+			if (e.texId >= g_textures.size()) continue;
+
+			const TextureGPU& tg = g_textures[e.texId];
+			if (!tg.hasAlpha) continue;
+
+			if (tg.heapIndex < texArrayBaseHeapSlot) continue;
+			UINT texIndex = tg.heapIndex - texArrayBaseHeapSlot;
+
+			out[e.id].texIndex = texIndex;
+			out[e.id].uvScale = e.uvMul;
+			out[e.id].cutoff = g_alphaShadowCutoff;
+			out[e.id].flags = 1;
+		}
+	}
+
 	CBLighting L{};
 	L.debugMode = float(g_gbufDebugMode);
 	XMStoreFloat4x4(&L.dirLightVP, XMMatrixTranspose(lightVP));
 
 	L.alphaShadowEntity = (g_alphaShadowEntity >= 0) ? (UINT)g_alphaShadowEntity : 0xFFFFFFFFu;
-	L.alphaShadowTexId = (g_alphaShadowTexId >= 0) ? (UINT)g_alphaShadowTexId : 0u;
-	L.alphaShadowCutoff = g_alphaShadowCutoff;
-	L.alphaShadowUvScale = g_alphaShadowUvScale;
+	
+	UINT texId = (g_alphaShadowTexId >= 0) ? (UINT)g_alphaShadowTexId : 0u;
+
+	UINT heapSlot = (texId < g_textures.size()) ? g_textures[texId].heapIndex : 0u;
+
+	wchar_t b[256];
+	swprintf_s(b, L"AlphaShadow: texId=%u heapSlot=%u (texCount=%u)\n",
+		texId, heapSlot, (UINT)g_textures.size());
+	OutputDebugStringW(b);
+
+	UINT t4Base = g_gbufAlbedoSRV + 4;
+	L.alphaShadowEntity = 0xFFFFFFFFu;
+	L.alphaShadowTexId = 0;
+	L.alphaShadowUvScale = 1.0f;
 
 	uint32_t n = (uint32_t)std::min<size_t>(g_lightsAuthor.size(), MAX_LIGHTS);
 	for (auto& A : g_lightsAuthor) if (A.type != LT_Point)
@@ -667,7 +690,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 	wc.lpszClassName = kClassName;
 	RegisterClassExW(&wc);
 
-	RECT rc{ 0,0,1280,720 };
+	RECT rc{ 0,0,1600,900 };
 	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, false);
 
 	g_hWnd = CreateWindowExW(
@@ -678,7 +701,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 		nullptr, nullptr, hInst, nullptr);
 
 	ShowWindow(g_hWnd, nCmdShow);
-	InitD3D12(g_hWnd, 1280, 720);
+	InitD3D12(g_hWnd, 1600, 900);
 
 	LARGE_INTEGER freq{};
 	QueryPerformanceFrequency(&freq);

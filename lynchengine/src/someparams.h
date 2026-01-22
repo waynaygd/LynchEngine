@@ -107,6 +107,18 @@ constexpr UINT MAX_OBJECTS = 1024;
 constexpr UINT CB_ALIGN = 256;
 constexpr UINT CB_SIZE_ALIGNED = (sizeof(VSConstants) + (CB_ALIGN - 1)) & ~(CB_ALIGN - 1);
 
+struct AlphaCasterGPU
+{
+    UINT texIndex; // индекс в gTex[] (0..)
+    float uvScale;
+    float cutoff;
+    UINT flags; // bit0 = hasAlphaMask
+};
+
+extern ComPtr<ID3D12Resource> g_alphaCasterBuf;
+extern uint8_t* g_alphaCasterPtr;
+extern UINT g_alphaCasterSRV;
+
 extern bool g_dxReady;
 extern UINT g_pendingW;
 extern UINT g_pendingH;
@@ -116,6 +128,8 @@ struct TextureGPU {
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
     UINT heapIndex = UINT(-1);
+    bool hasAlpha = false;   // новая штука
+    uint8_t _pad[3]{};
 };
 
 extern std::vector<TextureGPU> g_textures;
@@ -123,6 +137,7 @@ extern std::vector<TextureGPU> g_textures;
 extern std::vector<MeshGPU> g_meshes;
 
 struct Entity {
+    UINT id = 0;
     UINT meshId = 0;
     UINT texId = 0;
     DirectX::XMFLOAT3 pos{ 0,0,0 };
@@ -130,7 +145,10 @@ struct Entity {
     DirectX::XMFLOAT3 scale{ 1,1,1 };
     float uvMul = 1.0f;
 };
+
 extern std::vector<Entity> g_entities;
+
+static UINT g_nextEntityId = 1;
 
 static UINT g_width = 1600, g_height = 900;
 
@@ -152,7 +170,8 @@ extern float g_alphaShadowUvScale;
 
 UINT RegisterTextureFromFile(const std::wstring& path); 
 UINT RegisterOBJ(const std::wstring& path);             
-UINT CreateCubeMeshGPU(); 
+UINT CreateCubeMeshGPU();
+UINT CreatePlaneMeshGPU();
 
 extern UINT g_texFallbackId;
 extern UINT g_texDefault;
@@ -344,9 +363,16 @@ inline  void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int l
 inline UINT Scene_AddEntity(UINT meshId, UINT texId,
     XMFLOAT3 pos = { 0,0,0 }, XMFLOAT3 rotDeg = { 0,0,0 }, XMFLOAT3 scale = { 1,1,1 })
 {
-    Entity e; e.meshId = meshId; e.texId = texId; e.pos = pos; e.rotDeg = rotDeg; e.scale = scale;
+    Entity e;
+    e.id = g_nextEntityId++;   // важно
+    e.meshId = meshId;
+    e.texId = texId;
+    e.pos = pos;
+    e.rotDeg = rotDeg;
+    e.scale = scale;
+
     g_entities.push_back(e);
-    return (UINT)g_entities.size() - 1;
+    return (UINT)g_entities.size() - 1; // индекс в массиве всё ещё можно возвращать для UI
 }
 
 

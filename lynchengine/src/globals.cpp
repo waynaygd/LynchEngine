@@ -78,6 +78,10 @@ int g_uiAddrMode = 0;
 int g_uiFilter = 1;   
 int g_uiAniso = 8;
 
+ComPtr<ID3D12Resource> g_alphaCasterBuf;
+uint8_t* g_alphaCasterPtr = nullptr;
+UINT g_alphaCasterSRV = UINT_MAX;
+
 float g_heightMap = 12;
 bool g_terrainonetile = 0;
 bool g_terrainshow_wireframe = 0;

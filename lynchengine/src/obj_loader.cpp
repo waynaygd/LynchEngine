@@ -398,3 +398,93 @@ UINT CreateCubeMeshGPU()
 
     return id;
 }
+
+UINT CreatePlaneMeshGPU()
+{
+    // Плоскость в XZ, y = 0, размер 2x2 (от -1 до +1), UV 0..1
+    static const CubeVertex v[] = {
+        {{-1, 0, -1}, {0, 1, 0}, {0, 1}}, // 0
+        {{ 1, 0, -1}, {0, 1, 0}, {1, 1}}, // 1
+        {{ 1, 0,  1}, {0, 1, 0}, {1, 0}}, // 2
+        {{-1, 0,  1}, {0, 1, 0}, {0, 0}}, // 3
+    };
+
+    static const uint16_t idx[] = {
+        0, 1, 2,
+        0, 2, 3
+    };
+
+    const UINT vbBytes = (UINT)sizeof(v);
+    const UINT ibBytes = (UINT)sizeof(idx);
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> vb, ib, vbUpload, ibUpload;
+
+    auto CreateDefaultAndUpload = [&](const void* src, UINT bytes,
+        Microsoft::WRL::ComPtr<ID3D12Resource>& defaultBuf,
+        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuf,
+        D3D12_RESOURCE_STATES finalState)
+        {
+            CD3DX12_HEAP_PROPERTIES hpDef(D3D12_HEAP_TYPE_DEFAULT);
+            auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
+            HR(g_device->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_COMMON, nullptr,
+                IID_PPV_ARGS(defaultBuf.ReleaseAndGetAddressOf())));
+
+            CD3DX12_HEAP_PROPERTIES hpUp(D3D12_HEAP_TYPE_UPLOAD);
+            HR(g_device->CreateCommittedResource(&hpUp, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(uploadBuf.ReleaseAndGetAddressOf())));
+
+            void* mapped = nullptr; CD3DX12_RANGE noRead(0, 0);
+            HR(uploadBuf->Map(0, &noRead, &mapped));
+            std::memcpy(mapped, src, bytes);
+            uploadBuf->Unmap(0, nullptr);
+
+            HR(g_uploadAlloc->Reset());
+            HR(g_uploadList->Reset(g_uploadAlloc.Get(), nullptr));
+
+            auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+                defaultBuf.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+            g_uploadList->ResourceBarrier(1, &toCopy);
+
+            g_uploadList->CopyBufferRegion(defaultBuf.Get(), 0, uploadBuf.Get(), 0, bytes);
+
+            auto toFinal = CD3DX12_RESOURCE_BARRIER::Transition(
+                defaultBuf.Get(), D3D12_RESOURCE_STATE_COPY_DEST, finalState);
+            g_uploadList->ResourceBarrier(1, &toFinal);
+
+            HR(g_uploadList->Close());
+            ID3D12CommandList* lists[] = { g_uploadList.Get() };
+            g_cmdQueue->ExecuteCommandLists(1, lists);
+            WaitForGPU();
+        };
+
+    CreateDefaultAndUpload(v, vbBytes, vb, vbUpload, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+    CreateDefaultAndUpload(idx, ibBytes, ib, ibUpload, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+    MeshGPU mesh{};
+    mesh.vb = vb;
+    mesh.ib = ib;
+    mesh.indexCount = _countof(idx);
+
+    mesh.vbv.BufferLocation = mesh.vb->GetGPUVirtualAddress();
+    mesh.vbv.StrideInBytes = sizeof(CubeVertex);
+    assert(mesh.vbv.StrideInBytes == 32);
+    mesh.vbv.SizeInBytes = vbBytes;
+
+    mesh.ibv.BufferLocation = mesh.ib->GetGPUVirtualAddress();
+    mesh.ibv.Format = DXGI_FORMAT_R16_UINT;
+    mesh.ibv.SizeInBytes = ibBytes;
+
+    Submesh sm{};
+    sm.indexOffset = 0;
+    sm.indexCount = _countof(idx);
+    sm.materialId = UINT(-1); // как у куба; если фоллбек не обработан — поставь 0
+    mesh.subsets.push_back(sm);
+
+    UINT id = (UINT)g_meshes.size();
+    g_meshes.emplace_back(std::move(mesh));
+
+    return id;
+}
+
