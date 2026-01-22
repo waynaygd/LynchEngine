@@ -31,6 +31,14 @@ cbuffer CBMesh : register(b1)
     uint firstMeshlet;
 };
 
+
+cbuffer CBShrink : register(b2)
+{
+    uint debugMeshlets;
+    float shrinkFactor; 
+    float2 _padShrink;
+};
+
 StructuredBuffer<VertexOBJ> gVertices : register(t0);
 StructuredBuffer<MeshletGPU> gMeshlets : register(t1);
 StructuredBuffer<uint> gUnique : register(t2);
@@ -62,7 +70,8 @@ void main(
         uint vIdx = gUnique[ml.vertOffset + tid.x];
         VertexOBJ v = gVertices[vIdx];
 
-        float4 posW = mul(float4(v.pos, 1.0), M);
+        float3 posOS = v.pos * shrinkFactor;
+        float4 posW = mul(float4(posOS, 1.0), M);
         float4 posV = mul(posW, V);
         float4 posH = mul(posV, P);
 

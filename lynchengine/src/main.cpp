@@ -1,5 +1,6 @@
 ﻿#include "d3d_init.h"
 #include "uploader.h"
+#include <cmath>
 
 static float Halton(UINT index, UINT base)
 {
@@ -36,22 +37,25 @@ void RenderFrame()
 	float dt = float(double(now.QuadPart - s_prev.QuadPart) / double(s_freq.QuadPart));
 	s_prev = now;
 
+	static float s_meshletTimeSec = 0.0f;
+	s_meshletTimeSec += dt;
+
 	UpdateInput(dt);
 	g_cam.UpdateView();
 
 	XMMATRIX V = g_cam.View();
-	XMMATRIX P = g_cam.Proj();	
+	XMMATRIX P = g_cam.Proj();
 
 	XMMATRIX VP = XMMatrixMultiply(V, P);
 
 	XMFLOAT2 jitterNDC = { 0.0f, 0.0f };
-	if (g_taaEnabled) 
+	if (g_taaEnabled)
 	{
 		float h2 = Halton(g_taaSampleIndex & 1023u, 2);
 		float h3 = Halton(g_taaSampleIndex & 1023u, 3);
 		++g_taaSampleIndex;
 
-		const float jitterScale = 0.5f; 
+		const float jitterScale = 0.5f;
 
 		float jitterPxX = (h2 - 0.5f) * jitterScale;
 		float jitterPxY = (h3 - 0.5f) * jitterScale;
@@ -202,7 +206,10 @@ void RenderFrame()
 				g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(m.srvVertices));
 				g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[texId].gpu);
 				g_cmdList->SetGraphicsRoot32BitConstants(3, 1, &first, 0);
-				g_cmdList->SetGraphicsRoot32BitConstants(4, 1, &dbg, 0);
+				struct MeshletShrinkConsts { uint32_t debugMeshlets; float shrinkFactor; float pad0; float pad1; };
+				float shrink = 1.0f + g_meshletShrinkAmp * sinf(s_meshletTimeSec * g_meshletShrinkSpeed);
+				MeshletShrinkConsts sc{ dbg, shrink, 0.0f, 0.0f };
+				g_cmdList->SetGraphicsRoot32BitConstants(4, 4, &sc, 0);
 
 				g_cmdList->DispatchMesh(r.count, 1, 1);
 
@@ -307,7 +314,7 @@ void RenderFrame()
 				g_cmdList->SetGraphicsRootConstantBufferView(
 					0, g_cbTerrainTiles->GetGPUVirtualAddress() + offset);
 
-				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv); 
+				g_cmdList->SetGraphicsRootDescriptorTable(2, tr.heightSrv);
 				g_cmdList->SetGraphicsRootDescriptorTable(3, tr.diffuseSrv);
 
 				g_cmdList->DrawIndexedInstanced(g_terrainGrid.indexCount, 1, 0, 0, 0);
@@ -339,7 +346,7 @@ void RenderFrame()
 
 					g_cmdList->DrawIndexedInstanced(g_terrainSkirt.indexCount, 1, 0, 0, 0);
 				}
-			}			
+			}
 		}
 	}
 	else {
@@ -359,13 +366,13 @@ void RenderFrame()
 		CBTerrainTile cb{};
 		cb.tileOrigin = { 0, 0 };
 		cb.tileSize = 25.0f;
-		cb.heightScale = g_heightMap;        
+		cb.heightScale = g_heightMap;
 		memcpy(g_cbTerrainPtr, &cb, sizeof(cb));
 
-		g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress()); 
-		g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());   
-		g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);         
-		g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);       
+		g_cmdList->SetGraphicsRootConstantBufferView(0, g_cbTerrain->GetGPUVirtualAddress());
+		g_cmdList->SetGraphicsRootConstantBufferView(1, g_cbScene->GetGPUVirtualAddress());
+		g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[terrain_height].gpu);
+		g_cmdList->SetGraphicsRootDescriptorTable(3, g_textures[terrain_diffuse].gpu);
 
 		g_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		g_cmdList->IASetVertexBuffers(0, 1, &g_terrainGrid.vbv);
@@ -613,9 +620,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		return 0;
 
 	switch (msg) {
-	case WM_DESTROY: 
+	case WM_DESTROY:
 		DX_Shutdown();
-		PostQuitMessage(0); 
+		PostQuitMessage(0);
 		return 0;
 
 	case WM_KEYDOWN:
@@ -644,7 +651,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			ReleaseCapture();
 			ClipCursor(nullptr);
 			ShowCursor(TRUE);
-			g_mouseHasPrev = false; 
+			g_mouseHasPrev = false;
 		}
 		else {
 			g_appActive = true;
@@ -695,7 +702,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			int dx = p.x - g_lastMouse.x;
 			int dy = p.y - g_lastMouse.y;
-			g_lastMouse = p; 
+			g_lastMouse = p;
 
 			g_cam.AddYawPitch(dx * g_cam.mouseSens, -dy * g_cam.mouseSens);
 			g_cam.UpdateView();
@@ -722,7 +729,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 	wc.lpszClassName = kClassName;
 	RegisterClassExW(&wc);
 
-	RECT rc{ 0,0,1280,720 };
+	RECT rc{ 0,0,1600,900 };
 	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, false);
 
 	g_hWnd = CreateWindowExW(
@@ -733,7 +740,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
 		nullptr, nullptr, hInst, nullptr);
 
 	ShowWindow(g_hWnd, nCmdShow);
-	InitD3D12(g_hWnd, 1280, 720);
+	InitD3D12(g_hWnd, 1600, 900);
 
 	LARGE_INTEGER freq{};
 	QueryPerformanceFrequency(&freq);

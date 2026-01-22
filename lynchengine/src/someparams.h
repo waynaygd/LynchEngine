@@ -333,6 +333,9 @@ void WaitForGPU();
 
 void UpdateInput(float dt);
 
+extern float g_meshletShrinkAmp;
+extern float g_meshletShrinkSpeed;
+
 inline void ThrowIfFailed(HRESULT hr, const char* expr, const char* file, int line) {
     if (FAILED(hr)) {
         _com_error err(hr);

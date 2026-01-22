@@ -221,3 +221,6 @@ bool g_useMeshlets = true;
 bool g_debugMeshlets = false;
 
 bool b_daycycle = false;
+
+float g_meshletShrinkAmp = 0.15f;
+float g_meshletShrinkSpeed = 2.0f;

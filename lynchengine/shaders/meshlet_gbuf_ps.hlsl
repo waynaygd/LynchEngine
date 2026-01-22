@@ -18,6 +18,8 @@ struct PSOut
 cbuffer PSConstants : register(b2)
 {
     uint debugMeshlets;
+    float shrinkFactor;
+    float2 _padShrink;
 };
 
 PSOut main(PSIn i)

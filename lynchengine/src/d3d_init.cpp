@@ -1274,8 +1274,8 @@ void CreateMeshletGBufferRSandPSO()
     rp[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
     rp[4].Constants.ShaderRegister = 2; 
     rp[4].Constants.RegisterSpace = 0;
-    rp[4].Constants.Num32BitValues = 1;
-    rp[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rp[4].Constants.Num32BitValues = 4;
+    rp[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_ANISOTROPIC;
