@@ -57,7 +57,6 @@ static ComPtr<ID3DBlob> CompileShaderDXC(
     ComPtr<IDxcBlob> dxil;
     HR(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxil), nullptr));
 
-    // Заворачиваем в ID3DBlob, чтобы дальше твой код PSO не менять
     ComPtr<ID3DBlob> blob;
     HR(D3DCreateBlob(dxil->GetBufferSize(), &blob));
     memcpy(blob->GetBufferPointer(), dxil->GetBufferPointer(), dxil->GetBufferSize());
@@ -377,10 +376,6 @@ void DX_CreateDeviceAndQueue()
             }
         }
     }
-    else
-    {
-        // fallback: старый путь (см. ниже вариант 2)
-    }
 
     DXGI_ADAPTER_DESC1 d{};
     adapter->GetDesc1(&d);
@@ -507,7 +502,6 @@ void DX_BuildBLAS_ForAllMeshes()
 
         cl4->BuildRaytracingAccelerationStructure(&build, 0, nullptr);
 
-        // UAV barrier
         D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(g_blas[i].blas.Get());
         g_cmdList->ResourceBarrier(1, &uav);
     }
@@ -624,16 +618,13 @@ void DX_BuildTLAS_FromEntities()
         XMFLOAT4X4 wf;
         XMStoreFloat4x4(&wf, W);
 
-        // вместо твоего текущего блока d.Transform[...] = wf._..
-        // вместо текущего блока d.Transform[...]
-
         d.Transform[0][0] = wf._11; d.Transform[0][1] = wf._21; d.Transform[0][2] = wf._31; d.Transform[0][3] = wf._41;
         d.Transform[1][0] = wf._12; d.Transform[1][1] = wf._22; d.Transform[1][2] = wf._32; d.Transform[1][3] = wf._42;
         d.Transform[2][0] = wf._13; d.Transform[2][1] = wf._23; d.Transform[2][2] = wf._33; d.Transform[2][3] = wf._43;
 
         d.InstanceMask = 0xFF;
         d.AccelerationStructure = b.blas->GetGPUVirtualAddress();
-        d.InstanceID = (e.id & 0x00FFFFFFu); // InstanceID = 24 бита
+        d.InstanceID = (e.id & 0x00FFFFFFu); 
         d.InstanceContributionToHitGroupIndex = 0;
         d.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE;
 
@@ -662,7 +653,7 @@ void DX_BuildTLAS_FromEntities()
     build.DestAccelerationStructureData = g_tlas->GetGPUVirtualAddress();
 
     if (!needRebuild)
-        build.SourceAccelerationStructureData = g_tlas->GetGPUVirtualAddress(); // in-place update
+        build.SourceAccelerationStructureData = g_tlas->GetGPUVirtualAddress();
 
     cl4->BuildRaytracingAccelerationStructure(&build, 0, nullptr);
 
@@ -798,8 +789,8 @@ void DX_CreateGBuffer(UINT w, UINT h)
     UINT base0 = SRV_Alloc();  
     UINT base1 = SRV_Alloc();  
     UINT base2 = SRV_Alloc(); 
-    UINT base3 = SRV_Alloc();  // t3 TLAS (заполним позже)
-    UINT base4 = SRV_Alloc(); // t4 AlphaCaster buffer
+    UINT base3 = SRV_Alloc();  
+    UINT base4 = SRV_Alloc(); 
 
     assert(base1 == base0 + 1 && base2 == base0 + 2 && base3 == base0 + 3 && base4 == base0 + 4);
 

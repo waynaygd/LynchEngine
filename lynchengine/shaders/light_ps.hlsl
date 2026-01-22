@@ -114,11 +114,10 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
                     float3 hitWS = origin + dir * t;
 
                     float3x4 w2o = q.CandidateWorldToObject3x4();
-                    float3 hitOS = mul(w2o, float4(hitWS, 1.0)); // ¬ј∆Ќќ: пор€док!
+                    float3 hitOS = mul(w2o, float4(hitWS, 1.0)); 
 
                     float2 uv = hitOS.xz * 0.5 + 0.5;
 
-    // если ты уже правил разворот Ч оставь свою версию здесь (flip/swap)
                     uv *= ac.uvScale;
                     uv = 1.0f - uv;
 
@@ -131,11 +130,9 @@ float ShadowRay_DXR(float3 origin, float3 dir, float tMin, float tMax)
                             return 0.0;
                         }
                     }
-    // иначе: прозрачное => не коммитим
                 }
                 else
                 {
-    // обычный non-opaque (например, стекло без маски) считаем блокирующим
                     q.CommitNonOpaqueTriangleHit();
                     return 0.0;
                 }
