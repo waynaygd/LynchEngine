@@ -206,6 +206,7 @@ void RenderFrame()
 				g_cmdList->SetGraphicsRootDescriptorTable(1, SRV_GPU(m.srvVertices));
 				g_cmdList->SetGraphicsRootDescriptorTable(2, g_textures[texId].gpu);
 				g_cmdList->SetGraphicsRoot32BitConstants(3, 1, &first, 0);
+
 				struct MeshletShrinkConsts { uint32_t debugMeshlets; float shrinkFactor; float pad0; float pad1; };
 				float shrink = 1.0f + g_meshletShrinkAmp * sinf(s_meshletTimeSec * g_meshletShrinkSpeed);
 				MeshletShrinkConsts sc{ dbg, shrink, 0.0f, 0.0f };
