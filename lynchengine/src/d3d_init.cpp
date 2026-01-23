@@ -270,30 +270,6 @@ void BuildEditorUI()
                     g_selectedLight = -1;
                 }
             }
-            ImGui::Separator();
-            ImGui::Text("DXR Alpha Shadow (alpha-masked)");
-
-            ImGui::InputInt("Alpha caster entity", &g_alphaShadowEntity);
-            ImGui::InputInt("Alpha caster tex SRV id", &g_alphaShadowTexId);
-            ImGui::SliderFloat("Alpha cutoff", &g_alphaShadowCutoff, 0.0f, 1.0f);
-            ImGui::DragFloat("Alpha UV scale (XZ)", &g_alphaShadowUvScale, 0.01f, 0.0f, 100.0f);
-
-            if (ImGui::Button("Use selected entity as alpha caster"))
-            {
-                if (g_selectedEntity >= 0 && g_selectedEntity < (int)g_entities.size())
-                {
-                    g_alphaShadowEntity = (int)g_entities[g_selectedEntity].id;
-                    g_alphaShadowTexId = (int)g_entities[g_selectedEntity].texId;
-                    g_alphaShadowUvScale = g_entities[g_selectedEntity].uvMul;
-                }
-            }
-
-            if (ImGui::Button("Disable alpha caster"))
-            {
-                g_alphaShadowEntity = -1;
-                g_alphaShadowTexId = -1;
-            }
-
             ImGui::EndTabItem();
         }
 
